@@ -1317,50 +1317,107 @@ async function generateStrategy() {
   }
 }
 
+// === Helpers de renderizado “pro” (añádelos una vez) ===
+function li(items) {
+  if (!items || !items.length) return '';
+  return `<ul style="margin:.25rem 0 .25rem .75rem">${items.map(x=>`<li>${x}</li>`).join('')}</ul>`;
+}
+function rowsKPIs(kpis) {
+  if (!kpis || !kpis.length) return '';
+  return `
+    <table class="table" style="margin-top:.5rem">
+      <thead><tr><th>KPI</th><th>Objetivo</th></tr></thead>
+      <tbody>
+        ${kpis.map(k=>`<tr><td>${k.nombre}</td><td>${k.objetivo}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+function listCanales(canales) {
+  if (!canales || !canales.length) return '';
+  return canales.map(c => `
+    <div class="summary-card">
+      <div class="summary-title">${c.canal} <span class="summary-muted">(${c.presupuestoPct || 0}% presupuesto)</span></div>
+      <div class="summary-muted"><strong>Objetivo:</strong> ${c.objetivo || '-'}</div>
+      ${li(c.mensajes || [])}
+    </div>
+  `).join('');
+}
+function listPlan(plan) {
+  if (!plan || !plan.length) return '';
+  return plan.map(f => `
+    <div class="summary-card">
+      <div class="summary-title">Días ${f.fase}</div>
+      ${li(f.acciones || [])}
+    </div>
+  `).join('');
+}
+function listCalendario(c) {
+  if (!c || !c.length) return '';
+  return c.map(m => `
+    <div class="summary-card">
+      <div class="summary-title">${m.mes}</div>
+      ${li(m.ideas || [])}
+    </div>
+  `).join('');
+}
+
+// === Sustituye tu renderStrategyFromAPI por esta versión extendida ===
 function renderStrategyFromAPI(s, ctx) {
   const out = document.getElementById('strategyOutput');
-  const titulo = s.titulo || 'Estrategia Recomendada';
-  const precio = s.precio || '€110-130 por consulta';
-  const canalesList = Array.isArray(s.canales) ? s.canales : [];
-  const prioridad = s.prioridad || 'Construir reputación primeros 6 meses';
+  const personasHtml = Array.isArray(s.personas)
+    ? `<ul style="margin:.25rem 0 .25rem .75rem">
+         ${s.personas.map(p => `<li><strong>${p.nombre}:</strong> dolores: ${p.dolor}. motivadores: ${p.motivadores}</li>`).join('')}
+       </ul>`
+    : '<p class="summary-muted">—</p>';
 
   out.innerHTML = `
-    <div class="analysis-card" style="background:#f0f9ff;">
-      <h3 class="analysis-title">${titulo}</h3>
+    <div class="analysis-card" style="background:#eef6ff;border:1px solid #cfe3ff">
+      <h3 class="analysis-title">${s.titulo || 'Estrategia Recomendada'}</h3>
       <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
-      <p><strong>Precio objetivo:</strong> ${precio}</p>
-      <p><strong>Canales:</strong></p>
-      <ul style="margin-top:.25rem;">
-        ${canalesList.length ? canalesList.map(c => `<li>${c}</li>`).join('') : '<li>Marketing digital + referencias médicas</li>'}
-      </ul>
-      <p style="margin-top:.5rem;"><strong>Prioridad:</strong> ${prioridad}</p>
+      ${s.resumen ? `<p style="margin:.5rem 0 1rem">${s.resumen}</p>` : ''}
+
+      <div class="summary-grid" style="margin-top:.5rem">
+        <div class="summary-card">
+          <div class="summary-title">Precio objetivo</div>
+          <div class="summary-value">${s.precioObjetivo || s.precio || '—'}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-title">% Marketing / Ingresos</div>
+          <div class="summary-value">${s.presupuestoSugeridoPctIngresos ?? '—'}%</div>
+        </div>
+      </div>
+
+      <h4 class="section-title">Propuesta de valor</h4>
+      ${li(s.propuestaValor)}
+
+      <h4 class="section-title">Personas objetivo</h4>
+      ${personasHtml}
+
+      <h4 class="section-title">Posicionamiento</h4>
+      <p>${s.posicionamiento || '—'}</p>
+
+      <h4 class="section-title">Mix de canales (presupuesto ~100%)</h4>
+      <div class="summary-grid">${listCanales(s.mixCanales)}</div>
+
+      <h4 class="section-title">Plan 90 días</h4>
+      <div class="summary-grid">${listPlan(s.plan90dias)}</div>
+
+      <h4 class="section-title">Calendario de contenidos</h4>
+      <div class="summary-grid">${listCalendario(s.calendarioContenido)}</div>
+
+      <h4 class="section-title">KPIs</h4>
+      ${rowsKPIs(s.kpis)}
+
+      <h4 class="section-title">Riesgos</h4>
+      ${li(s.riesgos)}
+
+      <h4 class="section-title">Alianzas</h4>
+      ${li(s.alianzas)}
+
+      ${s.notas ? `<div class="summary-muted" style="margin-top:1rem">${s.notas}</div>` : ''}
     </div>
   `;
 }
-
-function getFallbackStrategyHTML(ctx){
-  return `
-    <div class="analysis-card" style="background:#fff;border:1px dashed #e5e7eb;padding:1rem;border-radius:12px">
-      <h4 style="margin:.25rem 0 .5rem">Estrategia Recomendada (base)</h4>
-      <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
-      <p><strong>Precio objetivo:</strong> €110-130 por consulta</p>
-      <p><strong>Canales:</strong></p>
-      <ul style="margin-top:.25rem;">
-        <li>Marketing digital</li>
-        <li>Redes sociales</li>
-        <li>Referencias médicas</li>
-        <li>Ferias de salud</li>
-      </ul>
-      <p style="margin-top:.5rem;"><strong>Prioridad:</strong> Construir reputación primeros 6 meses</p>
-    </div>
-  `;
-}
-
-// Si no tienes esta utilidad ya definida en tu código:
-function capitalize(s){ return (s||'').charAt(0).toUpperCase() + (s||'').slice(1); }
-
-
-
     /* ===================== REPORTS ===================== */
     function generateExecutiveReport() {
       const empresa = getEl('empresaNombre').value || 'Clínica Ejemplo';
