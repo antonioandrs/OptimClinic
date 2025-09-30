@@ -491,6 +491,9 @@
       <div class="card">
         <div class="card-header">
           <h2 class="card-title">📈 Inteligencia de Mercado</h2>
+	<button id="adminScraperBtn" class="btn btn-secondary" style="font-size:0.8rem; display:none">
+        🔧 Admin: Actualizar Precios
+      </button>
         </div>
         <div class="card-body">
           <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid var(--success); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
@@ -1509,6 +1512,69 @@ function capitalize(s){ return (s||'').charAt(0).toUpperCase() + (s||'').slice(1
       proyectar(); 
       render(); 
     }, 200);
+// ========== ADMIN: SCRAPER DE DOCTORALIA ==========
+(function initAdminScraper() {
+  // Detectar si eres admin (Ctrl+Shift+A tres veces)
+  let adminClicks = 0;
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+      adminClicks++;
+      if (adminClicks >= 3) {
+        document.getElementById('adminScraperBtn').style.display = 'block';
+        console.log('🔧 Modo admin activado');
+        adminClicks = 0;
+      }
+      setTimeout(() => { adminClicks = 0; }, 2000);
+    }
+  });
+})();
+
+document.getElementById('adminScraperBtn')?.addEventListener('click', async function() {
+  const provincia = document.getElementById('provincia').value;
+  const password = prompt('Contraseña de admin:');
+  
+  if (!password) return;
+  
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = '⏳ Scrapeando...';
+  
+  try {
+    const res = await fetch('/api/scrape-doctoralia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provincia, adminPassword: password })
+    });
+    
+    const data = await res.json();
+    
+    if (!res.ok) {
+      throw new Error(data.error || 'Error en scraping');
+    }
+    
+    console.log('✅ DATOS ACTUALIZADOS PARA ' + provincia + ':');
+    console.log('=====================================');
+    console.log('Copia este código en datosProvincia:');
+    console.log('=====================================');
+    console.log(`'${provincia}': {`);
+    console.log(`  consulta: ${data.codigoActualizar.consulta},`);
+    console.log(`  mixPrivado: ${data.codigoActualizar.mixPrivado},`);
+    console.log(`  crecimiento: ${data.codigoActualizar.crecimiento},`);
+    console.log(`  dso: ${data.codigoActualizar.dso}`);
+    console.log(`},`);
+    console.log('=====================================');
+    console.log('Detalles:', data);
+    
+    alert(`✅ Scraping exitoso!\n\nMira la consola y copia el código actualizado.\n\nMuestras: ${data.muestras}\nRango: ${data.consulta}`);
+    
+  } catch (error) {
+    console.error('Error:', error);
+    alert('❌ Error: ' + error.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔧 Admin: Actualizar Precios';
+  }
+});
   </script>
 </body>
 </html>
