@@ -1265,31 +1265,27 @@ async function generateStrategy() {
   `;
 
   try {
-    // Lee valores de los selects/inputs existentes
-    const tipo       = document.getElementById('estrategiaTipo').value || 'premium';
-    const ubicacion  = document.getElementById('ubicacionTipo').value || 'centro';
+    const tipo       = document.getElementById('estrategiaTipo')?.value || 'premium';
+    const ubicacion  = document.getElementById('ubicacionTipo')?.value || 'centro';
     const provincia  = (document.getElementById('provincia')?.value) || document.getElementById('provinciaActual')?.textContent || 'Madrid';
 
-    // “Datos del Sector” mostrados en la UI
-    const rangoConsulta = document.getElementById('rangoConsulta')?.textContent || '€90-180';
+    const rangoConsulta = document.getElementById('rangoConsulta')?.textContent || '€90–180';
     const mixPrivado    = document.getElementById('mixPrivado')?.textContent || '72%';
     const crecimiento   = document.getElementById('crecimientoSector')?.textContent || '14%';
     const dso           = document.getElementById('dsoPromedio')?.textContent || '48 días';
 
-    // Inputs financieros ya presentes
-    const ticketMedio  = Number(document.getElementById('ticketMedio')?.value || 110);
-    const pacientes    = Number(document.getElementById('serviciosMes')?.value || 180);
-    const costesFijos  = Number(document.getElementById('costesFijos')?.value || 12000);
-    // Si no tienes margenActual como texto, calcula con lastData o pon un valor por defecto
-    const margenPct    = Number((document.getElementById('margenActual')?.textContent || '65').toString().replace('%','')) || 65;
+    const ticketMedio = Number(document.getElementById('ticketMedio')?.value || 120);
+    const pacientes   = Number(document.getElementById('serviciosMes')?.value || 180);
+    const costesFijos = Number(document.getElementById('costesFijos')?.value || 12000);
+    const margenPct   = Number((document.getElementById('margenActual')?.textContent || '65').toString().replace('%','')) || 65;
 
     const payload = {
-      tipo,
-      ubicacion,
-      provincia,
+      tipo, ubicacion, provincia,
       mercado: { rangoConsulta, mixPrivado, crecimiento, dso },
       finanzas: { ticketMedio, pacientes, costesFijos, margenPct }
     };
+
+    console.log('[UI] Enviando a /api/strategy:', payload);
 
     const res = await fetch('/api/strategy', {
       method: 'POST',
@@ -1297,20 +1293,28 @@ async function generateStrategy() {
       body: JSON.stringify(payload)
     });
 
-    if (!res.ok) {
-      const msg = await res.text();
-      throw new Error(`Error ${res.status}: ${msg}`);
-    }
+    const raw = await res.text();
+    console.log('[UI] Respuesta bruta de /api/strategy:', raw);
 
-    const data = await res.json(); // { titulo, precio, canales[], prioridad, ... }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${raw}`);
+
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (e) { throw new Error('La respuesta no es JSON válido: ' + e.message); }
+
+    console.log('[UI] JSON parseado:', data);
+
     renderStrategyFromAPI(data, { tipo, ubicacion });
   } catch (err) {
+    console.error(err);
     out.innerHTML = `
       <div class="analysis-card" style="background:#fff0f0; border:1px solid #fecaca;">
         <h3 class="analysis-title" style="color:#dc2626;">Error al generar estrategia</h3>
         <p>Mostramos una recomendación base mientras revisas el endpoint <code>/api/strategy</code>.</p>
-        ${getFallbackStrategyHTML({ tipo: document.getElementById('estrategiaTipo')?.value || 'premium',
-                                    ubicacion: document.getElementById('ubicacionTipo')?.value || 'centro' })}
+        ${getFallbackStrategyHTML({
+          tipo: document.getElementById('estrategiaTipo')?.value || 'premium',
+          ubicacion: document.getElementById('ubicacionTipo')?.value || 'centro'
+        })}
         <pre style="white-space:pre-wrap; font-size:.85rem; color:#7f1d1d; margin-top:.75rem">${String(err)}</pre>
       </div>
     `;
@@ -1319,57 +1323,58 @@ async function generateStrategy() {
 
 // === Helpers de renderizado “pro” (añádelos una vez) ===
 function li(items) {
-  if (!items || !items.length) return '';
+  if (!items || !items.length) return '<p class="summary-muted">—</p>';
   return `<ul style="margin:.25rem 0 .25rem .75rem">${items.map(x=>`<li>${x}</li>`).join('')}</ul>`;
 }
 function rowsKPIs(kpis) {
-  if (!kpis || !kpis.length) return '';
+  if (!Array.isArray(kpis) || !kpis.length) return '<p class="summary-muted">—</p>';
   return `
     <table class="table" style="margin-top:.5rem">
       <thead><tr><th>KPI</th><th>Objetivo</th></tr></thead>
       <tbody>
-        ${kpis.map(k=>`<tr><td>${k.nombre}</td><td>${k.objetivo}</td></tr>`).join('')}
+        ${kpis.map(k=>`<tr><td>${k.nombre||'-'}</td><td>${k.objetivo||'-'}</td></tr>`).join('')}
       </tbody>
     </table>`;
 }
 function listCanales(canales) {
-  if (!canales || !canales.length) return '';
+  if (!Array.isArray(canales) || !canales.length) return '<p class="summary-muted">—</p>';
   return canales.map(c => `
     <div class="summary-card">
-      <div class="summary-title">${c.canal} <span class="summary-muted">(${c.presupuestoPct || 0}% presupuesto)</span></div>
+      <div class="summary-title">${c.canal||'-'} <span class="summary-muted">${c.presupuestoPct?`(${c.presupuestoPct}% presupuesto)`:''}</span></div>
       <div class="summary-muted"><strong>Objetivo:</strong> ${c.objetivo || '-'}</div>
       ${li(c.mensajes || [])}
     </div>
   `).join('');
 }
 function listPlan(plan) {
-  if (!plan || !plan.length) return '';
+  if (!Array.isArray(plan) || !plan.length) return '<p class="summary-muted">—</p>';
   return plan.map(f => `
     <div class="summary-card">
-      <div class="summary-title">Días ${f.fase}</div>
+      <div class="summary-title">Días ${f.fase||'-'}</div>
       ${li(f.acciones || [])}
     </div>
   `).join('');
 }
 function listCalendario(c) {
-  if (!c || !c.length) return '';
+  if (!Array.isArray(c) || !c.length) return '<p class="summary-muted">—</p>';
   return c.map(m => `
     <div class="summary-card">
-      <div class="summary-title">${m.mes}</div>
+      <div class="summary-title">${m.mes||'-'}</div>
       ${li(m.ideas || [])}
     </div>
   `).join('');
 }
-
-// === Sustituye tu renderStrategyFromAPI por esta versión extendida ===
 function renderStrategyFromAPI(s, ctx) {
-  const out = document.getElementById('strategyOutput');
-  const personasHtml = Array.isArray(s.personas)
-    ? `<ul style="margin:.25rem 0 .25rem .75rem">
-         ${s.personas.map(p => `<li><strong>${p.nombre}:</strong> dolores: ${p.dolor}. motivadores: ${p.motivadores}</li>`).join('')}
-       </ul>`
-    : '<p class="summary-muted">—</p>';
+  // Normalizamos mínimos
+  const presupuestoPct = (typeof s.presupuestoSugeridoPctIngresos === 'string')
+    ? s.presupuestoSugeridoPctIngresos.replace('%','')
+    : (s.presupuestoSugeridoPctIngresos ?? '');
 
+  const personasList = Array.isArray(s.personas) ? s.personas.map(p =>
+    `<li><strong>${p.nombre||'-'}:</strong> dolores: ${p.dolor||'-'}. motivadores: ${p.motivadores||'-'}</li>`
+  ).join('') : '';
+
+  const out = document.getElementById('strategyOutput');
   out.innerHTML = `
     <div class="analysis-card" style="background:#eef6ff;border:1px solid #cfe3ff">
       <h3 class="analysis-title">${s.titulo || 'Estrategia Recomendada'}</h3>
@@ -1383,7 +1388,7 @@ function renderStrategyFromAPI(s, ctx) {
         </div>
         <div class="summary-card">
           <div class="summary-title">% Marketing / Ingresos</div>
-          <div class="summary-value">${s.presupuestoSugeridoPctIngresos ?? '—'}%</div>
+          <div class="summary-value">${presupuestoPct ? presupuestoPct+'%' : '—'}</div>
         </div>
       </div>
 
@@ -1391,13 +1396,13 @@ function renderStrategyFromAPI(s, ctx) {
       ${li(s.propuestaValor)}
 
       <h4 class="section-title">Personas objetivo</h4>
-      ${personasHtml}
+      ${personasList ? `<ul style="margin:.25rem 0 .25rem .75rem">${personasList}</ul>` : '<p class="summary-muted">—</p>'}
 
       <h4 class="section-title">Posicionamiento</h4>
       <p>${s.posicionamiento || '—'}</p>
 
       <h4 class="section-title">Mix de canales (presupuesto ~100%)</h4>
-      <div class="summary-grid">${listCanales(s.mixCanales)}</div>
+      <div class="summary-grid">${listCanales(s.mixCanales || s.canales)}</div>
 
       <h4 class="section-title">Plan 90 días</h4>
       <div class="summary-grid">${listPlan(s.plan90dias)}</div>
@@ -1418,6 +1423,8 @@ function renderStrategyFromAPI(s, ctx) {
     </div>
   `;
 }
+function capitalize(s){ return (s||'').charAt(0).toUpperCase() + (s||'').slice(1); }
+
     /* ===================== REPORTS ===================== */
     function generateExecutiveReport() {
       const empresa = getEl('empresaNombre').value || 'Clínica Ejemplo';
