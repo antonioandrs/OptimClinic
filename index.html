@@ -1,14 +1,1431 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html>
+<!DOCTYPE html>
+<html lang="es">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <meta http-equiv="Content-Style-Type" content="text/css">
-  <title></title>
-  <meta name="Generator" content="Cocoa HTML Writer">
-  <meta name="CocoaVersion" content="2685.1">
-  <style type="text/css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OptiClinic - Planificación Financiera y Análisis de Mercado</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #2563eb; --primary-dark: #1d4ed8; --accent: #0891b2; --success: #059669; --warning: #d97706; --danger: #dc2626;
+      --white: #ffffff; --gray-50: #f8fafc; --gray-100: #f1f5f9; --gray-200: #e2e8f0; --gray-600: #475569; --gray-900: #0f172a;
+      --bg: var(--gray-50); --card: var(--white); --text: var(--gray-900); --text-muted: var(--gray-600); --border: var(--gray-200);
+      --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1); --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body { background: linear-gradient(135deg, var(--gray-50) 0%, #e0f2fe 100%); color: var(--text); font-family: 'Inter', system-ui, sans-serif; line-height: 1.6; min-height: 100vh; }
+
+    .header { background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%); color: var(--white); padding: 3rem 0; position: relative; overflow: hidden; }
+    .header-content { max-width: 1200px; margin: 0 auto; padding: 0 2rem; position: relative; z-index: 1; }
+    .brand { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+
+    /* ====== LOGO (actualizado) ====== */
+ /* Logo grande, sin padding, y con “zoom” en la imagen */
+.logo{
+  width: 132px;          /* ajusta 120–160px si quieres */
+  height: 132px;
+  background: var(--white);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;            /* sin padding para aprovechar todo */
+  overflow: hidden;      /* por si cover recorta */
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgb(0 0 0 / 0.08);
+}
+
+.logo img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;     /* rellena y reduce el borde blanco del JPG */
+  display: block;
+  border-radius: 14px;
+  transform: scale(1.18);  /* “zoom” para compensar margen blanco interno */
+  transform-origin: center;
+}
+
+@media (max-width: 640px){
+  .logo{ width: 96px; height: 96px; }
+  .logo img{ transform: scale(1.12); }
+}
+
+    /* ====== /LOGO ====== */
+
+    .brand-name { font-family: 'Playfair Display', serif; font-size: 2rem; font-weight: 700; margin: 0; }
+    .brand-tagline { font-size: 0.875rem; opacity: 0.9; font-weight: 500; }
+    .header h1 { font-size: clamp(1.875rem, 4vw, 3rem); font-weight: 700; margin: 0 0 1rem; line-height: 1.2; }
+    .header-description { font-size: 1.125rem; opacity: 0.95; max-width: 600px; line-height: 1.6; }
+
+    .container { max-width: 1400px; margin: -2rem auto 0; padding: 0 2rem 4rem; position: relative; z-index: 2; }
+
+    /* Tabs */
+    .tabs { display: flex; background: var(--white); border-radius: 16px 16px 0 0; box-shadow: var(--shadow-lg); margin-bottom: 0; overflow-x: auto; }
+    .tab { padding: 1rem 2rem; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 600; white-space: nowrap; transition: all 0.3s; }
+    .tab.active { border-bottom-color: var(--primary); background: var(--gray-50); color: var(--primary); }
+    .tab:hover:not(.active) { background: var(--gray-50); }
+
+    .tab-content { display: none; background: var(--white); border-radius: 0 0 16px 16px; box-shadow: var(--shadow-lg); }
+    .tab-content.active { display: block; }
+
+    .grid { display: grid; gap: 2rem; grid-template-columns: 1fr; padding: 2rem; }
+    @media (min-width: 1200px) { .grid { grid-template-columns: 480px 1fr; } }
+
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-lg); transition: all 0.3s; overflow: hidden; }
+    .card:hover { box-shadow: var(--shadow-xl); transform: translateY(-2px); }
+    .card-header { padding: 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .card-title { margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--text); }
+    .card-body { padding: 1.5rem; }
+
+    .badge { display: inline-flex; align-items: center; gap: 0.5rem; background: var(--primary); color: var(--white); padding: 0.5rem 1rem; border-radius: 50px; font-size: 0.875rem; font-weight: 600; }
+    .section-title { margin: 1.5rem 0 0.75rem; font-size: 0.875rem; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .form-row { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    .form-row-3 { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr 1fr; }
+    @media (max-width: 1024px) { .form-row-3 { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 768px) { .form-row, .form-row-3 { grid-template-columns: 1fr; } }
+
+    label { display: block; font-size: 0.875rem; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; }
+    input, select { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 8px; font: inherit; font-size: 0.875rem; transition: all 0.2s; background: var(--white); color: var(--text); }
+    input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgb(37 99 235 / 0.1); }
+    input[readonly] { background: var(--gray-50); color: var(--text-muted); }
+
+    .switch { display:flex; align-items:center; gap:.5rem; }
+    .switch input { width:auto; }
+
+    .btn { cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s; border: none; border-radius: 8px; padding: 0.75rem 1.5rem; }
+    .btn-primary { background: var(--primary); color: var(--white); }
+    .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+    .btn-secondary { background: var(--white); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--gray-50); }
+    .btn-success { background: var(--success); color: var(--white); }
+
+    .kpi-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 2rem; }
+    .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; text-align: center; transition: all 0.3s; }
+    .kpi-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-xl); }
+    .kpi-value { font-size: 2rem; font-weight: 800; color: var(--text); margin-bottom: 0.5rem; }
+    .kpi-label { color: var(--text-muted); font-size: 0.875rem; font-weight: 600; }
+
+    .status-indicator { display: flex; align-items: center; gap: 0.75rem; padding: 1rem; background: var(--gray-50); border-radius: 12px; margin-bottom: 1.5rem; }
+    .status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .status-dot.success { background: var(--success); }
+    .status-dot.warning { background: var(--warning); }
+    .status-dot.danger { background: var(--danger); }
+
+    .table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .table th { background: var(--gray-50); padding: 0.75rem 1rem; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); }
+    .table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--gray-100); }
+    .table tbody tr:hover { background: var(--gray-50); }
+    .table-success { color: var(--success); font-weight: 600; }
+    .table-danger { color: var(--danger); font-weight: 600; }
+
+    .charts-grid { display: grid; gap: 1.5rem; grid-template-columns: 1fr; margin: 2rem 0; }
+    @media (min-width: 900px) { .charts-grid { grid-template-columns: 1fr 1fr; } }
+    .chart-container { position: relative; height: 300px; background: var(--white); border-radius: 12px; padding: 1rem; box-shadow: var(--shadow-lg); }
+
+    .divider { height: 1px; background: var(--border); margin: 2rem 0; }
+
+    .summary-grid { display:grid; gap:1rem; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); }
+    .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; box-shadow: var(--shadow-lg); }
+    .summary-title { font-weight:700; font-size:.95rem; margin:0 0 .5rem; color:#0f172a; }
+    .summary-value { font-weight:800; font-size:1.25rem; }
+    .summary-muted { color:var(--gray-600); font-size:.85rem; }
+
+    /* Competitor styles */
+    .competitor-item { background: var(--gray-50); padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; }
+    .competitor-url { font-family: monospace; color: var(--primary); word-break: break-all; flex: 1; }
+    .status { padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; margin-left: 1rem; }
+    .status-pending { background: var(--warning); color: white; }
+    .status-success { background: var(--success); color: white; }
+    
+    .analysis-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin: 1.5rem 0; }
+    .analysis-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-lg); }
+    .analysis-title { margin: 0 0 1rem; font-size: 1.1rem; font-weight: 700; color: var(--primary); }
   </style>
 </head>
 <body>
+  <header class="header">
+    <div class="header-content">
+      <div class="brand">
+        <div class="logo">
+          <img
+            src="https://i.imgur.com/eRKd3Hp.jpeg"
+            alt="Logo OptimClinic"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+          />
+        </div>
+        <div>
+          <h1 class="brand-name">OptimClinic</h1>
+          <div class="brand-tagline">Consultoría médica especializada</div>
+        </div>
+      </div>
+      <h1>Planificación Financiera y Análisis de Mercado</h1>
+      <p class="header-description">
+        Herramienta profesional completa con proyecciones financieras, análisis de competencia y estrategia de mercado.
+      </p>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Tabs Navigation -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('financial')">📊 Planificación Financiera</div>
+      <div class="tab" onclick="switchTab('competitors')">🔍 Análisis de Competidores</div>
+      <div class="tab" onclick="switchTab('market')">📈 Inteligencia de Mercado</div>
+      <div class="tab" onclick="switchTab('reports')">📋 Informes</div>
+    </div>
+
+    <!-- Financial Planning Tab (TU CÓDIGO ORIGINAL COMPLETO) -->
+    <div class="tab-content active" id="financial-tab">
+      <div class="grid">
+        <!-- Configuración -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title">📊 Configuración</h2>
+            <div style="display:flex; gap:.75rem; align-items:center;">
+              <span class="badge">EUR</span>
+              <select id="ivaSel" style="padding:.25rem .5rem; width:auto" title="Tipo de IVA">
+                <option value="0" selected>IVA 0%</option>
+                <option value="10">IVA 10%</option>
+                <option value="21">IVA 21%</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <div class="section-title">💰 Inversión y Horizonte</div>
+            <div class="form-row-3">
+              <div><label for="provincia">Provincia</label>
+                <select id="provincia" onchange="actualizarDatosMercado()">
+                  <option value="Valencia">Valencia</option>
+                  <option value="Alicante">Alicante</option>
+                  <option value="Castellón">Castellón</option>
+                  <option value="Madrid">Madrid</option>
+                  <option value="Barcelona">Barcelona</option>
+                  <option value="Sevilla">Sevilla</option>
+                  <option value="Málaga">Málaga</option>
+                  <option value="Vizcaya">Vizcaya</option>
+                  <option value="Murcia">Murcia</option>
+                  <option value="Zaragoza">Zaragoza</option>
+                  <option value="Otra">Otra</option>
+                </select>
+              </div>
+              <div><label for="capex">CAPEX (inversión inicial) €</label><input id="capex" type="number" value="80000" /></div>
+              <div><label for="meses">Meses proyección</label><input id="meses" type="number" value="36" min="6" max="84" /></div>
+            </div>
+            <div class="form-row">
+              <div><label for="mesInicio">Mes inicial</label><input id="mesInicio" type="month" /></div>
+            </div>
+
+            <div class="section-title">🏦 Financiación del CAPEX</div>
+            <div class="form-row-3">
+              <div><label for="finImporte">Importe financiado €</label><input id="finImporte" type="number" value="40000" /></div>
+              <div><label for="finInteres">Interés anual %</label><input id="finInteres" type="number" value="6" step="0.1" /></div>
+              <div><label for="finPlazo">Plazo (meses)</label><input id="finPlazo" type="number" value="36" min="1" /></div>
+            </div>
+            <div class="form-row">
+              <div><label for="finCarencia">Carencia (meses, solo intereses)</label><input id="finCarencia" type="number" value="0" min="0" /></div>
+              <div><label for="tasaDesc">Tasa descuento anual % (VAN/TIR)</label><input id="tasaDesc" type="number" value="10" step="0.1" /></div>
+            </div>
+
+            <div class="section-title">💳 Mix de Pagadores</div>
+            <div class="form-row-3">
+              <div><label for="pctPriv">% Privado</label><input id="pctPriv" type="number" value="60" min="0" max="100" /></div>
+              <div><label for="tarPriv">Tarifa Privado €</label><input id="tarPriv" type="number" value="120" /></div>
+              <div><label for="pctAseg">% Aseguradora</label><input id="pctAseg" type="number" value="40" min="0" max="100" /></div>
+            </div>
+            <div class="form-row-3">
+              <div><label for="tarAseg">Tarifa Aseguradora €</label><input id="tarAseg" type="number" value="70" /></div>
+              <div><label for="ticketMedio">Ticket medio efectivo €</label><input id="ticketMedio" type="number" value="0" readonly /></div>
+              <div><label for="noShow">No-show / cancelaciones %</label><input id="noShow" type="number" value="8" step="0.1" /></div>
+            </div>
+
+            <div class="section-title">👥 Capacidad por Recursos</div>
+            <div class="form-row-3">
+              <div><label for="profesionales">Profesionales</label><input id="profesionales" type="number" value="2" min="1" /></div>
+              <div><label for="horasDia">Horas/día</label><input id="horasDia" type="number" value="7" step="0.5" /></div>
+              <div><label for="diasMes">Días/mes</label><input id="diasMes" type="number" value="22" min="1" /></div>
+            </div>
+            <div class="form-row">
+              <div><label for="minVisita">Minutos por visita</label><input id="minVisita" type="number" value="30" min="5" /></div>
+              <div><label for="capacidadCalc">Capacidad calculada pacientes/mes</label><input id="capacidadCalc" type="number" value="0" readonly /></div>
+            </div>
+
+            <div class="section-title">📈 Demanda y Marketing</div>
+            <div class="form-row-3">
+              <div><label for="serviciosMes">Pacientes planificados/mes inicial</label><input id="serviciosMes" type="number" value="180" /></div>
+              <div><label for="crecDemanda">Crecimiento orgánico %/mes</label><input id="crecDemanda" type="number" value="3" step="0.1" /></div>
+              <div><label for="mktMes">Presupuesto marketing/mes €</label><input id="mktMes" type="number" value="800" /></div>
+            </div>
+            <div class="form-row">
+              <div><label for="cpa">CPA (coste por alta) €</label><input id="cpa" type="number" value="40" /></div>
+            </div>
+
+            <div class="section-title">💰 Costes</div>
+            <div class="form-row-3">
+              <div><label for="costesFijos">Costes fijos/mes €</label><input id="costesFijos" type="number" value="12000" /></div>
+              <div><label for="crecCF">Crec. costes fijos %/año</label><input id="crecCF" type="number" value="3" step="0.1" /></div>
+              <div><label for="costeVariable">Coste variable/paciente €</label><input id="costeVariable" type="number" value="25" /></div>
+            </div>
+
+            <div class="section-title">🧾 Impuestos y Cobros</div>
+            <div class="form-row-3">
+              <div>
+                <label for="impSoc">Impuesto sociedades %</label>
+                <div class="switch"><input id="toggleImp" type="checkbox" checked /><label for="toggleImp">Aplicar</label></div>
+                <input id="impSoc" type="number" value="25" step="0.1" />
+              </div>
+              <div>
+                <label for="dsoAseg">Plazo cobro aseguradora (días)</label>
+                <div class="switch"><input id="toggleDSO" type="checkbox" checked /><label for="toggleDSO">Aplicar</label></div>
+                <input id="dsoAseg" type="number" value="60" min="0" step="1" />
+              </div>
+              <div><label for="amortMeses">Amortización contable (meses)</label><input id="amortMeses" type="number" value="36" min="1" /></div>
+            </div>
+
+            <div class="form-row" style="margin-top: 2rem;">
+              <button id="calc" class="btn btn-primary" title="Generar análisis completo">📊 Generar Análisis Completo</button>
+              <button id="reset" class="btn btn-secondary" title="Restablecer parámetros">🔄 Restablecer</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Resultados -->
+        <section class="card">
+          <div class="card-header">
+            <h2 class="card-title">📈 Resultados</h2>
+          </div>
+          <div class="card-body">
+            <div class="status-indicator">
+              <div class="status-dot warning" id="statusDot"></div>
+              <div id="statusText">Configure los parámetros y genere el análisis</div>
+            </div>
+
+            <div class="kpi-grid">
+              <div class="kpi-card"><div class="kpi-value" id="kpiBreakeven">—</div><div class="kpi-label">Break-even</div></div>
+              <div class="kpi-card"><div class="kpi-value" id="kpiROI">—</div><div class="kpi-label">ROI Final</div></div>
+              <div class="kpi-card"><div class="kpi-value" id="kpiNPV">—</div><div class="kpi-label">VAN (NPV)</div></div>
+              <div class="kpi-card"><div class="kpi-value" id="kpiIRR">—</div><div class="kpi-label">TIR Anual</div></div>
+            </div>
+
+            <h3 style="margin:2rem 0 1rem">🎯 Calculadora de Punto de Equilibrio</h3>
+            <div class="card" style="background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border: 2px solid #0891b2;">
+              <div class="card-body">
+                <div class="kpi-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+                  <div class="kpi-card" style="background: white;"><div class="kpi-value" id="precioMinimo" style="color: #0891b2;">—</div><div class="kpi-label">Precio Mínimo €</div></div>
+                  <div class="kpi-card" style="background: white;"><div class="kpi-value" id="pacientesMinimos" style="color: #0891b2;">—</div><div class="kpi-label">Pacientes Mínimos/mes</div></div>
+                  <div class="kpi-card" style="background: white;"><div class="kpi-value" id="margenActual" style="color: #0891b2;">—</div><div class="kpi-label">Margen Actual %</div></div>
+                  <div class="kpi-card" style="background: white;"><div class="kpi-value" id="zonaRentabilidad" style="color: #0891b2;">—</div><div class="kpi-label">Estado</div></div>
+                </div>
+                <div style="margin-top: 1.5rem; padding: 1rem; background: white; border-radius: 12px;">
+                  <h4 style="margin: 0 0 1rem; font-size: 0.95rem; color: #0891b2;">💡 Análisis de Viabilidad</h4>
+                  <div id="analisisViabilidad" style="font-size: 0.875rem; line-height: 1.6; color: #475569;">Configure los parámetros y genere el análisis para ver las recomendaciones.</div>
+                </div>
+              </div>
+            </div>
+
+            <h3 style="margin:2rem 0 1rem">🎯 Análisis de Sensibilidad</h3>
+            <div class="card" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); border: 2px solid #d97706;">
+              <div class="card-body">
+                <div style="margin-bottom: 2rem;">
+                  <h4 style="margin: 0 0 1rem; font-size: 1rem; color: #92400e;">📊 Tornado Chart - Cambio en ROI Final (p.p.)</h4>
+                  <div style="background: white; border-radius: 12px; padding: 1rem; margin-bottom: .5rem; height: 350px;">
+                    <canvas id="tornadoChart"></canvas>
+                  </div>
+                  <div style="text-align:right; font-size:.85rem; color:#64748b; margin-bottom: 1rem;">
+                    ROI base: <span id="roiBaseLabel">—</span>
+                  </div>
+                  <div style="background: #fef3c7; border-radius: 8px; padding: 1rem; font-size: 0.875rem; line-height: 1.5;">
+                    <strong>💡 Cómo interpretar este gráfico:</strong><br>
+                    • <span style="color: #dc2626;">Barras rojas:</span> Cuánto BAJA el ROI si esa variable empeora un 20%<br>
+                    • <span style="color: #16a34a;">Barras verdes:</span> Cuánto SUBE el ROI si esa variable mejora un 20%<br>
+                    • <strong>Las variables de arriba tienen más impacto</strong> - son tus palancas más poderosas
+                  </div>
+                </div>
+
+                <div>
+                  <h4 style="margin: 0 0 1rem; font-size: 1rem; color: #92400e;">🔄 Simulador "¿Qué pasaría si...?"</h4>
+                  <div style="background: white; border-radius: 12px; padding: 1.5rem;">
+                    <div class="form-row" style="margin-bottom: 1rem;">
+                      <div>
+                        <label for="simTarifa">Tarifa efectiva €</label>
+                        <input id="simTarifa" type="range" min="50" max="200" step="5" style="width: 100%;" />
+                        <div style="text-align: center; font-weight: bold; margin-top: 0.5rem;" id="simTarifaValue">—</div>
+                      </div>
+                      <div>
+                        <label for="simPacientes">Pacientes iniciales</label>
+                        <input id="simPacientes" type="range" min="50" max="300" step="10" style="width: 100%;" />
+                        <div style="text-align: center; font-weight: bold; margin-top: 0.5rem;" id="simPacientesValue">—</div>
+                      </div>
+                    </div>
+
+                    <div class="form-row" style="margin-bottom: 1rem;">
+                      <div>
+                        <label for="simCrecimiento">Crecimiento %/mes</label>
+                        <input id="simCrecimiento" type="range" min="0" max="10" step="0.5" style="width: 100%;" />
+                        <div style="text-align: center; font-weight: bold; margin-top: 0.5rem;" id="simCrecimientoValue">—</div>
+                      </div>
+                      <div>
+                        <label for="simCostesFijos">Costes fijos €</label>
+                        <input id="simCostesFijos" type="range" min="5000" max="20000" step="500" style="width: 100%;" />
+                        <div style="text-align: center; font-weight: bold; margin-top: 0.5rem;" id="simCostesFijosValue">—</div>
+                      </div>
+                    </div>
+
+                    <div style="background: #f0f9ff; border-radius: 8px; padding: 1rem;">
+                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div style="text-align: center;">
+                          <div style="font-size: 1.5rem; font-weight: bold; color: #1e40af; margin-bottom: 0.25rem;" id="simROI">—</div>
+                          <div style="font-size: 0.875rem; color: #64748b;">ROI Final</div>
+                        </div>
+                        <div style="text-align: center;">
+                          <div style="font-size: 1.5rem; font-weight: bold; color: #059669; margin-bottom: 0.25rem;" id="simEBITDA">—</div>
+                          <div style="font-size: 0.875rem; color: #64748b;">EBITDA último mes</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <h3 style="margin:2rem 0 1rem">📊 Evolución Financiera</h3>
+            <div class="charts-grid">
+              <div class="card">
+                <div class="card-header"><h4 style="margin:0; font-size:1rem">P&L Operativo</h4></div>
+                <div class="chart-container"><canvas id="chartPnl"></canvas></div>
+              </div>
+              <div class="card">
+                <div class="card-header"><h4 style="margin:0; font-size:1rem">Flujo de Caja</h4></div>
+                <div class="chart-container"><canvas id="chartCash"></canvas></div>
+              </div>
+            </div>
+
+            <h3 style="margin:2rem 0 1rem">📋 Detalle Mensual</h3>
+            <div style="overflow:auto">
+              <table class="table" id="tabla">
+                <thead><tr>
+                  <th>Mes</th><th>Planif.</th><th>Efectivos</th><th>Ingresos</th><th>C.Var</th><th>C.Fijos</th><th>EBITDA</th><th>Amort.</th><th>EBIT</th><th>Intereses</th><th>Impuestos</th><th>Principal</th><th>Flujo Caja</th><th>Acumulado</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+
+            <div class="divider"></div>
+            <h3 style="margin:2rem 0 1rem">💧 Resumen de Caja</h3>
+            <div class="summary-grid" id="cashSummary"></div>
+
+            <div class="divider"></div>
+            <div class="form-row">
+              <button id="exportCsv" class="btn btn-primary">📊 Exportar CSV</button>
+              <button id="exportXlsx" class="btn btn-secondary">📊 Exportar XLSX</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Competitors Tab -->
+    <div class="tab-content" id="competitors-tab">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">🔍 Análisis de Competidores</h2>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <span class="badge" id="competitorCount">0 añadidos</span>
+            <button class="btn btn-success" onclick="loadSampleCompetitors()">📝 Cargar Ejemplo</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="margin-bottom: 1rem;">
+            <label for="competitorUrl">URL del competidor</label>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="url" id="competitorUrl" placeholder="https://clinica-ejemplo.com" />
+              <button class="btn btn-primary" onclick="addCompetitor()">Añadir</button>
+            </div>
+          </div>
+          
+          <div id="competitorList" style="min-height: 100px;">
+            <p style="text-align: center; color: var(--text-muted); padding: 2rem;">No hay competidores añadidos</p>
+          </div>
+          
+          <div style="margin-top: 1.5rem; text-align: center;">
+            <button class="btn btn-success" onclick="analyzeCompetitors()" disabled id="analyzeBtn">🚀 Analizar Competidores</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="competitorResults" style="display: none;">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📊 Resultados del Análisis</h2>
+          </div>
+          <div class="card-body">
+            <div class="analysis-grid">
+              <div class="analysis-card">
+                <h3 class="analysis-title">🎯 Resumen Ejecutivo</h3>
+                <div id="executiveSummary"></div>
+              </div>
+              
+              <div class="analysis-card">
+                <h3 class="analysis-title">📈 Análisis de Mercado</h3>
+                <div id="marketAnalysis"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Market Intelligence Tab -->
+    <div class="tab-content" id="market-tab">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📈 Inteligencia de Mercado</h2>
+        </div>
+        <div class="card-body">
+          <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid var(--success); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+              <h3 style="margin: 0; color: #059669;">🏥 Datos del Sector - <span id="provinciaActual">Valencia</span></h3>
+              <a href="https://www.fundacionidis.com/sanidad-privada-aportando-valor" target="_blank" style="color: #059669; text-decoration: none; font-size: 0.875rem;">
+                📊 Ver fuente IDIS ↗
+              </a>
+            </div>
+            <div class="kpi-grid">
+              <div class="kpi-card">
+                <div class="kpi-value" style="color: #059669;" id="rangoConsulta">€70-130</div>
+                <div class="kpi-label">Rango consulta especializada</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-value" style="color: #059669;" id="mixPrivado">58%</div>
+                <div class="kpi-label">Mix privado estimado</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-value" style="color: #059669;" id="crecimientoSector">11%</div>
+                <div class="kpi-label">Crecimiento anual estimado</div>
+              </div>
+              <div class="kpi-card">
+                <div class="kpi-value" style="color: #059669;" id="dsoPromedio">52 días</div>
+                <div class="kpi-label">DSO promedio aseguradoras</div>
+              </div>
+            </div>
+            <div style="background: white; border-radius: 8px; padding: 1rem; margin-top: 1rem; font-size: 0.75rem; color: #475569;">
+              <strong>⚠️ Nota sobre los datos:</strong> Estimaciones basadas en informes sectoriales de IDIS (Fundación Instituto para el Desarrollo e Integración de la Sanidad), datos del INE sobre renta per cápita provincial, y ajustes regionales. Estos valores son aproximados para planificación estratégica, no constituyen precios oficiales. Se recomienda validar con investigación de mercado local.
+            </div>
+          </div>
+
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <h3 class="analysis-title">📊 Benchmarks Financieros</h3>
+              <div style="background: #f8fafc; padding: 1rem; border-radius: 8px;">
+                <p><strong>EBITDA objetivo:</strong> 25-35% sobre ingresos</p>
+                <p><strong>Margen bruto:</strong> 65-75% (consulta - coste variable)</p>
+                <p><strong>Costes fijos:</strong> 40-50% sobre ingresos</p>
+                <p><strong>Marketing:</strong> 5-8% sobre ingresos</p>
+                <p><strong>ROI esperado:</strong> 150-250% a 3 años</p>
+                <p style="font-size: 0.75rem; color: #64748b; margin-top: 0.5rem;">Fuente: Promedios sectoriales IDIS 2024</p>
+              </div>
+            </div>
+
+            <div class="analysis-card">
+              <h3 class="analysis-title">🎯 Factores Críticos de Éxito</h3>
+              <div style="background: #f8fafc; padding: 1rem; border-radius: 8px;">
+                <p><strong>Ubicación:</strong> Zona de alta renta, fácil acceso</p>
+                <p><strong>Especialización:</strong> Nicho específico vs generalista</p>
+                <p><strong>Tecnología:</strong> Telemedicina, cita online</p>
+                <p><strong>Experiencia:</strong> Años del equipo médico</p>
+                <p><strong>Servicios:</strong> Cartera completa vs especializada</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin: 2rem 0;">
+            <div class="card-header">
+              <h3 style="margin: 0;">🚀 Generador de Estrategias</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div>
+                  <label for="estrategiaTipo">Tipo de estrategia</label>
+                  <select id="estrategiaTipo">
+                    <option value="premium">Premium / Diferenciación</option>
+                    <option value="volumen">Alto Volumen / Precio Competitivo</option>
+                    <option value="nicho">Especialización / Nicho</option>
+                    <option value="mixta">Estrategia Mixta</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="ubicacionTipo">Tipo de ubicación</label>
+                  <select id="ubicacionTipo">
+                    <option value="centro">Centro urbano</option>
+                    <option value="residencial">Zona residencial</option>
+                    <option value="comercial">Centro comercial</option>
+                    <option value="hospital">Cerca de hospital</option>
+                  </select>
+                </div>
+              </div>
+              <button class="btn btn-primary" onclick="generateStrategy()">🧠 Generar Estrategia Personalizada</button>
+              
+              <div id="strategyOutput" style="display: none; margin-top: 1.5rem;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports Tab -->
+    <div class="tab-content" id="reports-tab">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">📋 Informes y Exportación</h2>
+        </div>
+        <div class="card-body">
+          <div class="analysis-grid">
+            <div class="analysis-card">
+              <h3 class="analysis-title">📊 Informe Ejecutivo</h3>
+              <p>Resumen completo para presentar a bancos, inversores o socios.</p>
+              <button class="btn btn-primary" onclick="generateExecutiveReport()">📋 Generar Informe</button>
+            </div>
+
+            <div class="analysis-card">
+              <h3 class="analysis-title">📈 Dossier para Bancos</h3>
+              <p>Documento específico para solicitudes de financiación.</p>
+              <button class="btn btn-primary" onclick="generateBankDossier()">🏦 Generar Dossier</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin: 2rem 0;">
+            <div class="card-header">
+              <h3 style="margin: 0;">🎯 Configuración de Informes</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div>
+                  <label for="empresaNombre">Nombre de la empresa</label>
+                  <input id="empresaNombre" type="text" placeholder="Clínica Ejemplo S.L." />
+                </div>
+                <div>
+                  <label for="responsableNombre">Responsable del proyecto</label>
+                  <input id="responsableNombre" type="text" placeholder="Dr. Juan Pérez" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="reportPreview" style="display: none;">
+            <div class="card">
+              <div class="card-header">
+                <h3 style="margin: 0;">👁️ Vista Previa del Informe</h3>
+              </div>
+              <div class="card-body" id="reportContent"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    /* ===================== TU CÓDIGO JAVASCRIPT ORIGINAL COMPLETO ===================== */
+    const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    
+    function parseMonthYYYYMM(v) {
+      if (!v || !/^\d{4}-\d{2}$/.test(v)) return new Date();
+      const [Y, M] = v.split('-').map(Number);
+      return new Date(Y, M - 1, 1);
+    }
+    
+    function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+    function monthLabel(d) { return `${MONTHS_ES[d.getMonth()]}-${d.getFullYear()}`; }
+
+    function eur(n) {
+      var ivaSel = document.getElementById('ivaSel');
+      var iva = Number(ivaSel ? ivaSel.value : 0) / 100;
+      return (Number(n || 0) * (1 + iva)).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    }
+    
+    function getEl(id) { return document.getElementById(id); }
+    function num(id) { var el = getEl(id); return Number(el && el.value || 0); }
+
+    function pmt(rate, nper, pv) {
+      if (nper <= 0) return 0;
+      if (Math.abs(rate) < 1e-12) return pv / nper;
+      return pv * rate / (1 - Math.pow(1 + rate, -nper));
+    }
+    
+    function npv(rate, cashflows) { 
+      return cashflows.reduce((acc, cf, i) => acc + cf / Math.pow(1 + rate, i), 0); 
+    }
+    
+    function irrMonthly(cashflows) {
+      const npvAt = r => npv(r, cashflows);
+      let lo = -0.99, hi = 3.0;
+      let fLo = npvAt(lo), fHi = npvAt(hi);
+      if (isNaN(fLo) || isNaN(fHi)) return NaN;
+      if (fLo * fHi > 0) {
+        for (let k = 0; k < 20 && fLo * fHi > 0; k++) { hi *= 0.75; fHi = npvAt(hi); }
+        if (fLo * fHi > 0) return NaN;
+      }
+      let x0 = lo, x1 = hi, f0 = fLo, f1 = fHi;
+      for (let i = 0; i < 100; i++) {
+        const denom = (f1 - f0);
+        let x2 = (Math.abs(denom) > 1e-12) ? x1 - f1 * (x1 - x0) / denom : (x0 + x1) / 2;
+        if (x2 <= lo || x2 >= hi || !isFinite(x2)) x2 = (lo + hi) / 2;
+        const f2 = npvAt(x2);
+        if (Math.abs(f2) < 1e-10) return x2;
+        if (f0 * f2 <= 0) { hi = x2; f1 = f2; x1 = x2; } 
+        else { lo = x2; f0 = f2; x0 = x2; }
+        if (Math.abs(hi - lo) < 1e-7) return (lo + hi) / 2;
+      }
+      return (lo + hi) / 2;
+    }
+
+    var charts = { pnl: null, cash: null, tornado: null };
+    var lastData = null;
+    var competitors = [];
+
+    /* ===================== BASE DE DATOS PROVINCIAS ===================== */
+    const datosProvincia = {
+      'Valencia': { consulta: '€70-130', mixPrivado: '58%', crecimiento: '11%', dso: '52 días' },
+      'Alicante': { consulta: '€75-135', mixPrivado: '62%', crecimiento: '12%', dso: '50 días' },
+      'Castellón': { consulta: '€65-120', mixPrivado: '54%', crecimiento: '10%', dso: '55 días' },
+      'Madrid': { consulta: '€90-180', mixPrivado: '72%', crecimiento: '14%', dso: '48 días' },
+      'Barcelona': { consulta: '€85-170', mixPrivado: '68%', crecimiento: '13%', dso: '50 días' },
+      'Sevilla': { consulta: '€70-140', mixPrivado: '60%', crecimiento: '11%', dso: '53 días' },
+      'Málaga': { consulta: '€75-145', mixPrivado: '64%', crecimiento: '13%', dso: '51 días' },
+      'Vizcaya': { consulta: '€85-165', mixPrivado: '70%', crecimiento: '12%', dso: '49 días' },
+      'Murcia': { consulta: '€68-125', mixPrivado: '56%', crecimiento: '10%', dso: '54 días' },
+      'Zaragoza': { consulta: '€72-135', mixPrivado: '59%', crecimiento: '11%', dso: '52 días' },
+      'Otra': { consulta: '€75-140', mixPrivado: '62%', crecimiento: '11%', dso: '52 días' }
+    };
+
+    function actualizarDatosMercado() {
+      const provincia = getEl('provincia').value;
+      const datos = datosProvincia[provincia];
+      
+      getEl('provinciaActual').textContent = provincia;
+      getEl('rangoConsulta').textContent = datos.consulta;
+      getEl('mixPrivado').textContent = datos.mixPrivado;
+      getEl('crecimientoSector').textContent = datos.crecimiento;
+      getEl('dsoPromedio').textContent = datos.dso;
+    }
+
+    function actualizarCalculos() {
+      var pctPriv = Math.max(0, num('pctPriv')) / 100;
+      var pctAseg = Math.max(0, num('pctAseg')) / 100;
+      var tarPriv = Math.max(0, num('tarPriv'));
+      var tarAseg = Math.max(0, num('tarAseg'));
+      var mixSum = Math.max(0.01, pctPriv + pctAseg);
+      var ticketMedio = (pctPriv * tarPriv + pctAseg * tarAseg) / mixSum;
+      getEl('ticketMedio').value = ticketMedio.toFixed(2);
+
+      var profesionales = Math.max(1, num('profesionales'));
+      var horasDia = Math.max(1, num('horasDia'));
+      var diasMes = Math.max(1, num('diasMes'));
+      var minVisita = Math.max(5, num('minVisita'));
+      var capacidadCalc = Math.floor((profesionales * horasDia * diasMes * 60) / minVisita);
+      getEl('capacidadCalc').value = capacidadCalc;
+    }
+
+    ['pctPriv','pctAseg','tarPriv','tarAseg','profesionales','horasDia','diasMes','minVisita'].forEach(id=>{
+      getEl(id).addEventListener('input', actualizarCalculos);
+    });
+
+    function proyectar() {
+      actualizarCalculos();
+
+      var meses = Math.max(6, Math.min(84, num('meses')));
+      var capex = num('capex');
+      var amortMeses = Math.max(1, num('amortMeses'));
+      var amortMensual = capex / amortMeses;
+
+      var srv0 = num('serviciosMes');
+      var crecM = num('crecDemanda') / 100;
+      var noShowPct = num('noShow') / 100;
+      var mktMes = num('mktMes');
+      var cpa = Math.max(1, num('cpa'));
+      var capacidadMax = num('capacidadCalc');
+
+      var cfBase = num('costesFijos');
+      var crecCFyear = num('crecCF') / 100;
+      var cVar = num('costeVariable');
+
+      var pctPriv = Math.max(0, num('pctPriv')) / 100;
+      var pctAseg = Math.max(0, num('pctAseg')) / 100;
+      var mixSum = Math.max(0.01, pctPriv + pctAseg);
+      var wPriv = pctPriv / mixSum, wAseg = pctAseg / mixSum;
+      var tarPriv = Math.max(0, num('tarPriv'));
+      var tarAseg = Math.max(0, num('tarAseg'));
+      var ticket = num('ticketMedio');
+
+      var finImporte = Math.min(capex, Math.max(0, num('finImporte')));
+      var finInteresAnual = Math.max(0, num('finInteres')) / 100;
+      var finPlazo = Math.max(0, num('finPlazo'));
+      var finCarencia = Math.max(0, num('finCarencia'));
+      var rDeuda = Math.pow(1 + finInteresAnual, 1/12) - 1;
+
+      var tasaDescAnual = Math.max(0, num('tasaDesc')) / 100;
+      var rDesc = Math.pow(1 + tasaDescAnual, 1/12) - 1;
+
+      var impEnabled = getEl('toggleImp').checked;
+      var dsoEnabled = getEl('toggleDSO').checked;
+
+      var impSoc = impEnabled ? Math.max(0, num('impSoc')) / 100 : 0;
+      var dsoAsegDias = dsoEnabled ? Math.max(0, num('dsoAseg')) : 0;
+      var delayAsegMeses = Math.round(dsoAsegDias / 30);
+
+      var startDate = parseMonthYYYYMM(getEl('mesInicio').value);
+      var mesesArr = [], monthLabels = [];
+      for (var i = 0; i < meses; i++) { 
+        mesesArr.push(i+1); 
+        monthLabels.push(monthLabel(addMonths(startDate, i))); 
+      }
+
+      var pacientesPlanif = [], pacientesEfectivos = [];
+      var ingresos = [], ingresosPriv = [], ingresosAseg = [];
+      var cVariables = [], cfMensual = [], ebitda = [], amortArr = [], ebit = [];
+      var intereses = [], principal = [], impuestos = [];
+      var cobrosPriv = [], cobrosAseg = [];
+      var flujoNeto = [], flujoAcum = [];
+
+      var saldoDeuda = finImporte;
+      var cuotaAmort = 0;
+      if (finPlazo > finCarencia && saldoDeuda > 0) {
+        cuotaAmort = pmt(rDeuda, Math.max(0, finPlazo - finCarencia), saldoDeuda);
+      }
+
+      var colaCobrosAseg = new Array(meses + delayAsegMeses + 5).fill(0);
+      var equity0 = -(capex - finImporte);
+      var cashflows = [equity0];
+
+      for (var i = 1; i <= meses; i++) {
+        var organicos = Math.round(srv0 * Math.pow(1 + crecM, i - 1));
+        var mktPacientes = Math.floor(mktMes / cpa);
+        var planificados = Math.min(organicos + mktPacientes, capacidadMax);
+        var efectivos = Math.round(planificados * (1 - noShowPct));
+
+        var efectPriv = efectivos * wPriv;
+        var efectAseg = efectivos * wAseg;
+        var ingPriv = efectPriv * tarPriv;
+        var ingAseg = efectAseg * tarAseg;
+        var ingresosMes = ingPriv + ingAseg;
+
+        var cVariablesMes = efectivos * cVar;
+        var cfMes = cfBase * Math.pow(1 + crecCFyear, (i - 1) / 12) + mktMes;
+        var ebitdaMes = ingresosMes - cVariablesMes - cfMes;
+        var amortMes = (i <= amortMeses) ? amortMensual : 0;
+        var ebitMes = ebitdaMes - amortMes;
+
+        var interesesMes = 0, principalMes = 0;
+        if (i <= finPlazo && saldoDeuda > 1e-6) {
+          interesesMes = saldoDeuda * rDeuda;
+          if (i <= finCarencia) {
+            principalMes = 0;
+          } else {
+            principalMes = Math.min(saldoDeuda, cuotaAmort - interesesMes);
+          }
+          saldoDeuda -= principalMes;
+        }
+
+        var ebt = ebitMes - interesesMes;
+        var impMes = (ebt > 0) ? (ebt * impSoc) : 0;
+
+        var cobroPrivMes = ingPriv;
+        var cobroAsegMes = colaCobrosAseg[i-1] || 0;
+        colaCobrosAseg[i - 1 + delayAsegMeses] += ingAseg;
+
+        var flujoMes = (cobroPrivMes + cobroAsegMes) - cVariablesMes - cfMes - (interesesMes + principalMes) - impMes;
+        var acumulado = (i === 1 ? equity0 : flujoAcum[i - 2]) + flujoMes;
+
+        pacientesPlanif.push(planificados);
+        pacientesEfectivos.push(efectivos);
+        ingresos.push(ingresosMes);
+        ingresosPriv.push(ingPriv);
+        ingresosAseg.push(ingAseg);
+        cVariables.push(cVariablesMes);
+        cfMensual.push(cfMes);
+        ebitda.push(ebitdaMes);
+        amortArr.push(amortMes);
+        ebit.push(ebitMes);
+        intereses.push(interesesMes);
+        impuestos.push(impMes);
+        principal.push(principalMes);
+        cobrosPriv.push(cobroPrivMes);
+        cobrosAseg.push(cobroAsegMes);
+        flujoNeto.push(flujoMes);
+        flujoAcum.push(acumulado);
+        cashflows.push(flujoMes);
+      }
+
+      var beIndex = flujoAcum.findIndex(v => v >= 0);
+      var beMes = (beIndex >= 0) ? (beIndex + 1) : null;
+      var roiFinal = (cashflows.reduce((a, b) => a + b, 0) / Math.abs(equity0 || 1)) * 100;
+      var npvVal = npv(rDesc, cashflows);
+      var irrM = irrMonthly(cashflows);
+      var irrAnual = Math.pow(1 + irrM, 12) - 1;
+
+      var utilizacionFinal = capacidadMax > 0 ? (pacientesEfectivos[pacientesEfectivos.length - 1] / capacidadMax * 100) : 0;
+
+      var pacientesMes1 = pacientesEfectivos[0] || 0;
+      var cfMes1 = cfBase + mktMes;
+      var amortMes1 = capex / amortMeses;
+      var precioMinimo = pacientesMes1 > 0 ? (cfMes1 + (pacientesMes1 * cVar) + amortMes1) / pacientesMes1 : 0;
+      var pacientesMinimos = (ticket > cVar) ? Math.ceil((cfMes1 + amortMes1) / (ticket - cVar)) : 0;
+      var margenActual = ticket > 0 ? ((ticket - cVar) / ticket * 100) : 0;
+      var pacientesFinal = pacientesEfectivos[pacientesEfectivos.length - 1] || 0;
+
+      var estadoRentabilidad = 'NO RENTABLE';
+      var analisisTexto = '';
+
+      if (pacientesMinimos > 0) {
+        if (pacientesMes1 >= pacientesMinimos) {
+          var exceso = ((pacientesMes1 - pacientesMinimos) / pacientesMinimos * 100).toFixed(0);
+          analisisTexto = '✅ <strong>Rentable desde el inicio:</strong> Con ' + pacientesMes1 + ' pacientes/mes y ticket de ' + eur(ticket) + ', superas el mínimo (' + pacientesMinimos + ') en ' + exceso + '%. Margen ' + margenActual.toFixed(1) + '%.';
+          estadoRentabilidad = 'RENTABLE';
+        } else if (beMes) {
+          if (pacientesFinal >= pacientesMinimos) {
+            analisisTexto = '📈 <strong>Viable con crecimiento:</strong> Break-even en mes ' + beMes + ' (' + monthLabels[beIndex] + ').';
+            estadoRentabilidad = 'VIABLE';
+          } else {
+            analisisTexto = '⚠️ <strong>Break-even temporal:</strong> Llegas a break-even en mes ' + beMes + ' (' + monthLabels[beIndex] + '), pero el nivel final (' + pacientesFinal + ') no supera el mínimo (' + pacientesMinimos + ').';
+            estadoRentabilidad = 'TEMPORAL';
+          }
+        } else {
+          analisisTexto = '⚠️ <strong>No viable:</strong> Con ' + pacientesMes1 + ' pacientes iniciales y ' + pacientesFinal + ' finales, no alcanzas rentabilidad. Sube ticket a ' + eur(precioMinimo) + ' o incrementa demanda.';
+          estadoRentabilidad = 'NO RENTABLE';
+        }
+      } else {
+        analisisTexto = '⚠️ <strong>Parámetros incorrectos:</strong> El ticket efectivo debe ser > coste variable.';
+        estadoRentabilidad = 'ERROR';
+      }
+
+      function sum(a){ return a.reduce((x,y)=>x+y,0); }
+      var totalCobrosPriv = sum(cobrosPriv);
+      var totalCobrosAsegEf = sum(cobrosAseg);
+      var totalCobrosFactAseg = sum(ingresosAseg);
+      var totalVar = sum(cVariables);
+      var totalFijos = sum(cfMensual);
+      var totalIntereses = sum(intereses);
+      var totalPrincipal = sum(principal);
+      var totalImpuestos = sum(impuestos);
+      var minAcum = Math.min.apply(null, flujoAcum);
+      var minIndex = flujoAcum.findIndex(v => v === minAcum);
+      var necesidadMaxCaja = Math.min(0, minAcum);
+      var mesMinCaja = (minIndex >= 0) ? monthLabels[minIndex] : '-';
+
+      lastData = {
+        mesesArr, monthLabels,
+        pacientesPlanif, pacientesEfectivos,
+        ingresos, ingresosPriv, ingresosAseg,
+        cVariables, cfMensual, ebitda, amortArr, ebit, intereses, impuestos, principal,
+        cobrosPriv, cobrosAseg,
+        flujoNeto, flujoAcum,
+        ticket, capacidadMax, utilizacionFinal,
+        beMes, roiFinal, npvVal, irrAnual,
+        precioMinimo, pacientesMinimos, margenActual, estadoRentabilidad, analisisTexto,
+        totalCobrosPriv, totalCobrosAsegEf, totalCobrosFactAseg, totalVar, totalFijos, 
+        totalIntereses, totalPrincipal, totalImpuestos, necesidadMaxCaja, mesMinCaja
+      };
+    }
+
+    function simularConParametros(cambios) {
+      var original = {};
+      Object.keys(cambios).forEach(function(fieldId) {
+        var el = getEl(fieldId);
+        if (el) { original[fieldId] = el.value; el.value = cambios[fieldId]; }
+      });
+      actualizarCalculos(); 
+      proyectar();
+      var res = { roiFinal: lastData.roiFinal, ebitdaFinal: lastData.ebitda[lastData.ebitda.length - 1] || 0 };
+      Object.keys(original).forEach(function(fieldId) { getEl(fieldId).value = original[fieldId]; });
+      actualizarCalculos(); 
+      proyectar();
+      return res;
+    }
+
+    function calcularSensibilidad() {
+      if (!lastData) return null;
+      var baseROI = lastData.roiFinal;
+      var vars = [
+        { label: 'Tarifa Efectiva', field: 'ticketMedio',  variation: 0.20 },
+        { label: 'Pacientes',       field: 'serviciosMes', variation: 0.20 },
+        { label: 'Crecimiento',     field: 'crecDemanda',  variation: 0.30 },
+        { label: 'Costes Fijos',    field: 'costesFijos',  variation: 0.20 },
+        { label: 'No-show %',       field: 'noShow',       variation: 0.50 },
+        { label: 'Marketing',       field: 'mktMes',       variation: 0.30 },
+        { label: 'Coste Variable',  field: 'costeVariable',variation: 0.30 }
+      ];
+      
+      function impactFor(field, variation, sign) {
+        if (field === 'ticketMedio') {
+          const ticketActual = num('ticketMedio') || 1;
+          const factor = (ticketActual * (1 + sign * variation)) / ticketActual;
+          return simularConParametros({
+            'tarPriv': num('tarPriv') * factor,
+            'tarAseg': num('tarAseg') * factor
+          }).roiFinal - baseROI;
+        } else {
+          const base = num(field);
+          return simularConParametros({ [field]: base * (1 + sign * variation) }).roiFinal - baseROI;
+        }
+      }
+      
+      var impacts = vars.map(v => {
+        const plus  = impactFor(v.field, v.variation, +1);
+        const minus = impactFor(v.field, v.variation, -1);
+        return { name: v.label, positive: plus, negative: minus, total: Math.abs(plus) + Math.abs(minus) };
+      });
+      
+      impacts.sort((a,b) => b.total - a.total);
+      return impacts;
+    }
+
+    function renderTornadoChart() {
+      var impacts = calcularSensibilidad();
+      if (!impacts) return;
+      var ctx = getEl('tornadoChart');
+      if (charts.tornado) charts.tornado.destroy();
+      
+      charts.tornado = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: impacts.map(i => i.name),
+          datasets: [
+            { label: 'Impacto Negativo', data: impacts.map(i => i.negative), backgroundColor: '#ef4444', borderRadius: 4 },
+            { label: 'Impacto Positivo', data: impacts.map(i => i.positive), backgroundColor: '#22c55e', borderRadius: 4 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+          plugins: {
+            legend: { display: true },
+            title: { display: true, text: 'Cambio en ROI final (p.p.)' },
+            tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + ctx.raw.toFixed(2) + ' p.p.' } }
+          },
+          scales: { x: { beginAtZero: true, ticks: { callback: (v) => v.toFixed(1) + ' p.p.' } } }
+        }
+      });
+      
+      getEl('roiBaseLabel').textContent = lastData.roiFinal.toFixed(1) + '%';
+    }
+
+    function initSimulator() {
+      getEl('simTarifa').value = num('ticketMedio');
+      getEl('simPacientes').value = num('serviciosMes');
+      getEl('simCrecimiento').value = num('crecDemanda');
+      getEl('simCostesFijos').value = num('costesFijos');
+      updateSimulatorValues();
+      
+      ['simTarifa','simPacientes','simCrecimiento','simCostesFijos'].forEach(id=>{
+        getEl(id).addEventListener('input', function(){ updateSimulatorValues(); simulateROI(); });
+      });
+      
+      simulateROI();
+    }
+
+    function updateSimulatorValues() {
+      getEl('simTarifaValue').textContent = eur(getEl('simTarifa').value);
+      getEl('simPacientesValue').textContent = getEl('simPacientes').value;
+      getEl('simCrecimientoValue').textContent = getEl('simCrecimiento').value + '%';
+      getEl('simCostesFijosValue').textContent = eur(getEl('simCostesFijos').value);
+    }
+
+    function simulateROI() {
+      if (!lastData) return;
+      var tarifaSimulada = Number(getEl('simTarifa').value);
+      var pacientesSimulados = Number(getEl('simPacientes').value);
+      var crecimientoSimulado = Number(getEl('simCrecimiento').value);
+      var costesSimulados = Number(getEl('simCostesFijos').value);
+      var ticketActual = num('ticketMedio') || 1;
+      var factorTarifa = tarifaSimulada / ticketActual;
+      
+      var res = simularConParametros({
+        'tarPriv': num('tarPriv') * factorTarifa,
+        'tarAseg': num('tarAseg') * factorTarifa,
+        'serviciosMes': pacientesSimulados,
+        'crecDemanda': crecimientoSimulado,
+        'costesFijos': costesSimulados
+      });
+      
+      getEl('simROI').textContent = res.roiFinal.toFixed(1) + '%';
+      getEl('simROI').style.color = res.roiFinal > 100 ? '#22c55e' : (res.roiFinal > 50 ? '#f59e0b' : '#ef4444');
+      getEl('simEBITDA').textContent = eur(res.ebitdaFinal);
+      getEl('simEBITDA').style.color = res.ebitdaFinal > 0 ? '#059669' : '#ef4444';
+    }
+
+    function render() {
+      if (!lastData) return;
+      var d = lastData;
+      var totalMeses = d.mesesArr.length;
+
+      getEl('kpiBreakeven').textContent = d.beMes ? ('Mes ' + d.beMes + ' / ' + totalMeses) : 'No alcanzado';
+      getEl('kpiROI').textContent = isFinite(d.roiFinal) ? d.roiFinal.toFixed(1) + '%' : '—';
+      getEl('kpiNPV').textContent = eur(d.npvVal);
+      getEl('kpiIRR').textContent = isFinite(d.irrAnual) ? (d.irrAnual * 100).toFixed(1) + '%' : '—';
+
+      getEl('precioMinimo').textContent = eur(d.precioMinimo);
+      getEl('pacientesMinimos').textContent = d.pacientesMinimos.toLocaleString('es-ES');
+      getEl('margenActual').textContent = d.margenActual.toFixed(1) + '%';
+      getEl('zonaRentabilidad').textContent = d.estadoRentabilidad;
+      getEl('zonaRentabilidad').style.color = d.estadoRentabilidad === 'RENTABLE' ? '#059669' : 
+        (d.estadoRentabilidad === 'VIABLE' || d.estadoRentabilidad === 'TEMPORAL') ? '#d97706' : '#dc2626';
+      getEl('analisisViabilidad').innerHTML = d.analisisTexto;
+
+      var statusDot = getEl('statusDot');
+      var statusText = getEl('statusText');
+      if (d.beMes) {
+        statusText.textContent = 'Proyecto viable - Break-even mes ' + d.beMes;
+        statusDot.className = 'status-dot success';
+      } else if (d.roiFinal > 0) {
+        statusText.textContent = 'Proyecto con retorno positivo';
+        statusDot.className = 'status-dot warning';
+      } else {
+        statusText.textContent = 'Proyecto no viable';
+        statusDot.className = 'status-dot danger';
+      }
+
+      var tbody = document.querySelector('#tabla tbody');
+      tbody.innerHTML = '';
+      d.mesesArr.forEach(function(m, i) {
+        var tr = document.createElement('tr');
+        var cells = [
+          d.monthLabels[i],
+          d.pacientesPlanif[i].toLocaleString('es-ES'),
+          d.pacientesEfectivos[i].toLocaleString('es-ES'),
+          eur(d.ingresos[i]),
+          eur(d.cVariables[i]),
+          eur(d.cfMensual[i]),
+          eur(d.ebitda[i]),
+          eur(d.amortArr[i]),
+          eur(d.ebit[i]),
+          eur(d.intereses[i]),
+          eur(d.impuestos[i]),
+          eur(d.principal[i]),
+          eur(d.flujoNeto[i]),
+          eur(d.flujoAcum[i])
+        ];
+        cells.forEach(function(txt, idx) {
+          var td = document.createElement('td');
+          td.textContent = txt;
+          if (idx === 6) td.className = d.ebitda[i] >= 0 ? 'table-success' : 'table-danger';
+          else if (idx === 12) td.className = d.flujoNeto[i] >= 0 ? 'table-success' : 'table-danger';
+          else if (idx === 13) td.className = d.flujoAcum[i] >= 0 ? 'table-success' : 'table-danger';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      if (charts.pnl) charts.pnl.destroy();
+      charts.pnl = new Chart(getEl('chartPnl'), {
+        type: 'line',
+        data: {
+          labels: d.monthLabels,
+          datasets: [
+            { label: 'Ingresos', data: d.ingresos, borderColor: '#059669', backgroundColor: 'rgba(5,150,105,0.1)', fill: true, tension: 0.4 },
+            { label: 'Costes Totales', data: d.cVariables.map((v, i) => v + d.cfMensual[i]), borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.1)', fill: true, tension: 0.4 },
+            { label: 'EBITDA', data: d.ebitda, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.1)', fill: true, tension: 0.4 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, 
+          plugins: { legend: { display: true } },
+          scales: { y: { ticks: { callback: v => eur(v) } } }
+        }
+      });
+
+      if (charts.cash) charts.cash.destroy();
+      charts.cash = new Chart(getEl('chartCash'), {
+        type: 'line',
+        data: {
+          labels: d.monthLabels,
+          datasets: [
+            { label: 'Flujo Acumulado', data: d.flujoAcum, borderColor: '#9333ea', backgroundColor: 'rgba(147,51,234,0.08)', fill: true, tension: 0.4 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: true } },
+          scales: { y: { ticks: { callback: v => eur(v) } } }
+        }
+      });
+
+      const cashSummary = getEl('cashSummary');
+      cashSummary.innerHTML = '';
+      function card(title, value, note='') {
+        const div = document.createElement('div');
+        div.className = 'summary-card';
+        div.innerHTML = `<div class="summary-title">${title}</div>
+                         <div class="summary-value">${value}</div>
+                         ${note ? `<div class="summary-muted">${note}</div>` : ''}`;
+        cashSummary.appendChild(div);
+      }
+      card('Cobros Privado', eur(d.totalCobrosPriv));
+      card('Cobros Aseguradora', eur(d.totalCobrosAsegEf));
+      card('Pagos Variables', eur(d.totalVar));
+      card('Pagos Fijos', eur(d.totalFijos));
+      card('Necesidad máx. caja', eur(d.necesidadMaxCaja), 'Mes: ' + d.mesMinCaja);
+
+      setTimeout(function(){ renderTornadoChart(); initSimulator(); }, 100);
+    }
+
+    /* ===================== TAB SWITCHING ===================== */
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      
+      const tabs = ['financial', 'competitors', 'market', 'reports'];
+      const index = tabs.indexOf(tabName);
+      if (index >= 0) {
+        document.querySelectorAll('.tab')[index].classList.add('active');
+        getEl(tabName + '-tab').classList.add('active');
+      }
+    }
+
+    /* ===================== COMPETITORS ===================== */
+    function addCompetitor() {
+      const url = getEl('competitorUrl').value;
+      if (!url) return alert('Introduce una URL válida');
+      
+      competitors.push({ url, status: 'pending' });
+      getEl('competitorUrl').value = '';
+      getEl('analyzeBtn').disabled = false;
+      updateCompetitorCount();
+      renderCompetitors();
+    }
+
+    function renderCompetitors() {
+      const list = getEl('competitorList');
+      if (competitors.length === 0) {
+        list.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 2rem;">No hay competidores añadidos</p>';
+        return;
+      }
+      
+      list.innerHTML = competitors.map((c, i) => `
+        <div class="competitor-item">
+          <span class="competitor-url">${c.url}</span>
+          <span class="status status-${c.status}">${c.status === 'pending' ? 'Pendiente' : 'Analizado'}</span>
+        </div>
+      `).join('');
+    }
+
+    function updateCompetitorCount() {
+      getEl('competitorCount').textContent = competitors.length + ' añadidos';
+    }
+
+    function loadSampleCompetitors() {
+      competitors = [
+        { url: 'https://clinica-ejemplo1.com', status: 'pending' },
+        { url: 'https://clinica-ejemplo2.com', status: 'pending' },
+        { url: 'https://clinica-ejemplo3.com', status: 'pending' }
+      ];
+      getEl('analyzeBtn').disabled = false;
+      updateCompetitorCount();
+      renderCompetitors();
+    }
+
+    function analyzeCompetitors() {
+      competitors.forEach(c => c.status = 'success');
+      renderCompetitors();
+      
+      getEl('executiveSummary').innerHTML = `
+        <p><strong>Competidores analizados:</strong> ${competitors.length}</p>
+        <p><strong>Rango de precios:</strong> €80-150</p>
+        <p><strong>Servicios más comunes:</strong> Consulta general, especialidades, urgencias</p>
+      `;
+      
+      getEl('marketAnalysis').innerHTML = `
+        <p><strong>Oportunidades identificadas:</strong></p>
+        <ul>
+          <li>Telemedicina poco desarrollada</li>
+          <li>Horarios limitados (mayoría cierra 19h)</li>
+          <li>Pocos ofrecen parking gratuito</li>
+        </ul>
+      `;
+      
+      getEl('competitorResults').style.display = 'block';
+    }
+
+    /* ===================== MARKET INTELLIGENCE (llama a /api/strategy) ===================== */
+async function generateStrategy() {
+  const tipo = getEl('estrategiaTipo').value;
+  const ubicacion = getEl('ubicacionTipo').value;
+
+  // Contexto de mercado (lo que ya muestras arriba con IDIS)
+  const provincia = (getEl('provincia') && getEl('provincia').value) || getEl('provinciaActual').textContent;
+  const mercado = {
+    rangoConsulta: getEl('rangoConsulta').textContent,
+    mixPrivado: getEl('mixPrivado').textContent,
+    crecimiento: getEl('crecimientoSector').textContent,
+    dso: getEl('dsoPromedio').textContent,
+  };
+
+  // Contexto financiero (resumen rápido de tu simulador)
+  const finanzas = {
+    ticketMedio: Number(getEl('ticketMedio').value || 0),
+    pacientes: Number(getEl('serviciosMes').value || 0),
+    costesFijos: Number(getEl('costesFijos').value || 0),
+    margenPct: Number((getEl('margenActual').textContent || '0').replace('%','')) || 0
+  };
+
+  const out = getEl('strategyOutput');
+  out.style.display = 'block';
+  out.innerHTML = `
+    <div class="analysis-card" style="background:#eef2ff;border:1px solid #c7d2fe">
+      <h3 class="analysis-title">Generando estrategia…</h3>
+      <p>Analizando <strong>${provincia}</strong> con enfoque <strong>${tipo}</strong> en <strong>${ubicacion}</strong>.</p>
+    </div>
+  `;
+
+  try {
+    // Llamada a tu endpoint serverless en Vercel
+    const res = await fetch('/api/strategy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, ubicacion, provincia, mercado, finanzas })
+    });
+
+    // Si el endpoint no responde OK, mostramos fallback
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json(); // esperado: { titulo, precio, canales, prioridad, bullets, rationale }
+
+    renderStrategyFromAPI(data, { tipo, ubicacion });
+  } catch (err) {
+    // Fallback local si /api/strategy falla o aún no está desplegado
+    out.innerHTML = `
+      <div class="analysis-card" style="background:#fef2f2;border:1px solid #fecaca">
+        <h3 class="analysis-title">No se pudo obtener la estrategia por IA</h3>
+        <p style="margin:.5rem 0 .75rem">Se muestra una recomendación base mientras revisas el endpoint <code>/api/strategy</code>.</p>
+        ${getFallbackStrategyHTML({ tipo, ubicacion })}
+        <p class="summary-muted" style="margin-top:.75rem">${(err && err.message) || 'Error desconocido'}</p>
+      </div>
+    `;
+  }
+}
+
+function renderStrategyFromAPI(s, ctx) {
+  const out = getEl('strategyOutput');
+  const titulo = s.titulo || 'Estrategia Recomendada';
+  const precio = s.precio || '€110-130 por consulta';
+  const canales = Array.isArray(s.canales) ? s.canales.join(' + ') : (s.canales || 'Marketing digital + referencias médicas');
+  const prioridad = s.prioridad || 'Construir reputación primeros 6 meses';
+  const bullets = Array.isArray(s.bullets) ? s.bullets.map(b=>`<li>${b}</li>`).join('') : '';
+  const rationale = s.rationale ? `<p class="summary-muted" style="margin-top:.5rem">${s.rationale}</p>` : '';
+
+  out.innerHTML = `
+    <div class="analysis-card" style="background:#f0f9ff;border:1px solid #bae6fd">
+      <h3 class="analysis-title">${titulo}</h3>
+      <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
+      <p><strong>Precio objetivo:</strong> ${precio}</p>
+      <p><strong>Canales:</strong> ${canales}</p>
+      <p><strong>Prioridad:</strong> ${prioridad}</p>
+      ${bullets ? `<ul style="margin-top:.5rem">${bullets}</ul>` : ''}
+      ${rationale}
+    </div>
+  `;
+}
+
+function getFallbackStrategyHTML(ctx){
+  return `
+    <div class="analysis-card" style="background:#fff;border:1px dashed #e5e7eb;padding:1rem;border-radius:12px">
+      <h4 style="margin:.25rem 0 .5rem">Estrategia Recomendada (base)</h4>
+      <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
+      <p><strong>Precio objetivo:</strong> €110-130 por consulta</p>
+      <p><strong>Canales:</strong> Marketing digital + referencias médicas</p>
+      <p><strong>Prioridad:</strong> Construir reputación primeros 6 meses</p>
+    </div>
+  `;
+}
+
+function capitalize(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+
+    /* ===================== REPORTS ===================== */
+    function generateExecutiveReport() {
+      const empresa = getEl('empresaNombre').value || 'Clínica Ejemplo';
+      const responsable = getEl('responsableNombre').value || 'Responsable';
+      
+      getEl('reportContent').innerHTML = `
+        <h3>Informe Ejecutivo - ${empresa}</h3>
+        <p><strong>Responsable:</strong> ${responsable}</p>
+        <p><strong>Fecha:</strong> ${new Date().toLocaleDateString('es-ES')}</p>
+        <hr style="margin: 1rem 0;">
+        <h4>Resumen Financiero</h4>
+        ${lastData ? `
+          <p>Inversión inicial: ${eur(num('capex'))}</p>
+          <p>Break-even: ${lastData.beMes ? 'Mes ' + lastData.beMes : 'No alcanzado'}</p>
+          <p>ROI proyectado: ${lastData.roiFinal.toFixed(1)}%</p>
+        ` : '<p>Genera primero el análisis financiero</p>'}
+      `;
+      getEl('reportPreview').style.display = 'block';
+    }
+
+    function generateBankDossier() {
+      generateExecutiveReport();
+    }
+
+    /* ===================== EVENTOS ===================== */
+    getEl('calc').addEventListener('click', function(){ proyectar(); render(); });
+    getEl('reset').addEventListener('click', function(){ if (confirm('¿Restablecer parámetros?')) location.reload(); });
+    
+    getEl('exportCsv').addEventListener('click', function() {
+      if (!lastData) return alert('Genere el análisis primero');
+      var d = lastData;
+      var rows = d.mesesArr.map(function(_, i) {
+        return [
+          d.monthLabels[i], d.pacientesPlanif[i], d.pacientesEfectivos[i],
+          d.ingresos[i], d.cVariables[i], d.cfMensual[i], d.ebitda[i],
+          d.amortArr[i], d.ebit[i], d.intereses[i], d.impuestos[i],
+          d.principal[i], d.flujoNeto[i], d.flujoAcum[i]
+        ].join(',');
+      });
+      var csv = ['Mes,Planif,Efectivos,Ingresos,C.Var,C.Fijos,EBITDA,Amort,EBIT,Intereses,Impuestos,Principal,Flujo,Acumulado', ...rows].join('\n');
+      var blob = new Blob([csv], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'opticlinic_analisis.csv';
+      a.click();
+    });
+
+    getEl('exportXlsx').addEventListener('click', function() {
+      if (!lastData) return alert('Genere el análisis primero');
+      var d = lastData;
+      var data = [['Mes','Planif','Efectivos','Ingresos','C.Var','C.Fijos','EBITDA','Amort','EBIT','Intereses','Impuestos','Principal','Flujo','Acumulado']];
+      d.mesesArr.forEach(function(_, i) {
+        data.push([
+          d.monthLabels[i], d.pacientesPlanif[i], d.pacientesEfectivos[i],
+          d.ingresos[i], d.cVariables[i], d.cfMensual[i], d.ebitda[i],
+          d.amortArr[i], d.ebit[i], d.intereses[i], d.impuestos[i],
+          d.principal[i], d.flujoNeto[i], d.flujoAcum[i]
+        ]);
+      });
+      var wb = XLSX.utils.book_new();
+      var ws = XLSX.utils.aoa_to_sheet(data);
+      XLSX.utils.book_append_sheet(wb, ws, 'Análisis');
+      XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
+    });
+
+    /* ===================== INICIALIZACIÓN ===================== */
+    (function initStartMonth(){
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      getEl('mesInicio').value = `${y}-${m}`;
+    })();
+
+    setTimeout(function() { 
+      actualizarCalculos(); 
+      proyectar(); 
+      render(); 
+    }, 200);
+  </script>
 </body>
 </html>
