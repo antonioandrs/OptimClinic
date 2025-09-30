@@ -1259,33 +1259,31 @@ async function generateStrategy() {
   out.style.display = 'block';
   out.innerHTML = `
     <div class="analysis-card" style="background:#f0f9ff;">
-      <h3 class="analysis-title">Estrategia Recomendada</h3>
-      <p>Generando estrategia con IA…</p>
+      <h3 class="analysis-title">⏳ Generando estrategia...</h3>
+      <p style="color:#64748b">Consultando inteligencia artificial (10-15 seg)</p>
     </div>
   `;
 
   try {
-    const tipo       = document.getElementById('estrategiaTipo')?.value || 'premium';
-    const ubicacion  = document.getElementById('ubicacionTipo')?.value || 'centro';
-    const provincia  = (document.getElementById('provincia')?.value) || document.getElementById('provinciaActual')?.textContent || 'Madrid';
-
-    const rangoConsulta = document.getElementById('rangoConsulta')?.textContent || '€90–180';
-    const mixPrivado    = document.getElementById('mixPrivado')?.textContent || '72%';
-    const crecimiento   = document.getElementById('crecimientoSector')?.textContent || '14%';
-    const dso           = document.getElementById('dsoPromedio')?.textContent || '48 días';
-
-    const ticketMedio = Number(document.getElementById('ticketMedio')?.value || 120);
-    const pacientes   = Number(document.getElementById('serviciosMes')?.value || 180);
-    const costesFijos = Number(document.getElementById('costesFijos')?.value || 12000);
-    const margenPct   = Number((document.getElementById('margenActual')?.textContent || '65').toString().replace('%','')) || 65;
-
     const payload = {
-      tipo, ubicacion, provincia,
-      mercado: { rangoConsulta, mixPrivado, crecimiento, dso },
-      finanzas: { ticketMedio, pacientes, costesFijos, margenPct }
+      tipo: document.getElementById('estrategiaTipo')?.value || 'premium',
+      ubicacion: document.getElementById('ubicacionTipo')?.value || 'centro',
+      provincia: document.getElementById('provincia')?.value || 'Madrid',
+      mercado: {
+        rangoConsulta: document.getElementById('rangoConsulta')?.textContent || '€90-180',
+        mixPrivado: document.getElementById('mixPrivado')?.textContent || '72%',
+        crecimiento: document.getElementById('crecimientoSector')?.textContent || '14%',
+        dso: document.getElementById('dsoPromedio')?.textContent || '48 días'
+      },
+      finanzas: {
+        ticketMedio: Number(document.getElementById('ticketMedio')?.value || 120),
+        pacientes: Number(document.getElementById('serviciosMes')?.value || 180),
+        costesFijos: Number(document.getElementById('costesFijos')?.value || 12000),
+        margenPct: Number((document.getElementById('margenActual')?.textContent || '65').toString().replace('%','')) || 65
+      }
     };
 
-    console.log('[UI] Enviando a /api/strategy:', payload);
+    console.log('[Frontend] Enviando:', payload);
 
     const res = await fetch('/api/strategy', {
       method: 'POST',
@@ -1293,22 +1291,43 @@ async function generateStrategy() {
       body: JSON.stringify(payload)
     });
 
-    const raw = await res.text();
-    console.log('[UI] Respuesta bruta de /api/strategy:', raw);
+    const data = await res.json();
+    console.log('[Frontend] Respuesta:', data);
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${raw}`);
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
 
-    let data;
-    try { data = JSON.parse(raw); }
-    catch (e) { throw new Error('La respuesta no es JSON válido: ' + e.message); }
+    // Si viene con error pero también con fallback
+    if (data.error && data.titulo) {
+      out.innerHTML = `
+        <div style="background:#fef3c7; border:2px solid #f59e0b; border-radius:12px; padding:1rem; margin-bottom:1rem">
+          <strong>⚠️ Usando estrategia base</strong><br>
+          <span style="font-size:0.875rem; color:#92400e">
+            No se pudo generar con IA (${data.error}). Mostramos recomendaciones generales.
+          </span>
+        </div>
+      `;
+    }
 
-    console.log('[UI] JSON parseado:', data);
+    renderStrategyFromAPI(data, { 
+      tipo: payload.tipo, 
+      ubicacion: payload.ubicacion 
+    });
 
-    renderStrategyFromAPI(data, { tipo, ubicacion });
   } catch (err) {
-    console.error(err);
+    console.error('[Frontend] Error:', err);
     out.innerHTML = `
-      <div class="analysis-card" style="background:#fff0f0; border:1px solid #fecaca;">
+      <div class="analysis-card" style="background:#fef2f2; border:2px solid #fca5a5;">
+        <h3 class="analysis-title" style="color:#dc2626">❌ Error al generar estrategia</h3>
+        <p>${err.message}</p>
+        <button class="btn btn-primary" onclick="generateStrategy()" style="margin-top:1rem">
+          🔄 Reintentar
+        </button>
+      </div>
+    `;
+  }
+}
         <h3 class="analysis-title" style="color:#dc2626;">Error al generar estrategia</h3>
         <p>Mostramos una recomendación base mientras revisas el endpoint <code>/api/strategy</code>.</p>
         ${getFallbackStrategyHTML({
