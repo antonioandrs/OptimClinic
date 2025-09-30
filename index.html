@@ -1254,81 +1254,86 @@
       getEl('competitorResults').style.display = 'block';
     }
 
-    /* ===================== MARKET INTELLIGENCE (llama a /api/strategy) ===================== */
 async function generateStrategy() {
-  const tipo = getEl('estrategiaTipo').value;
-  const ubicacion = getEl('ubicacionTipo').value;
-
-  // Contexto de mercado (lo que ya muestras arriba con IDIS)
-  const provincia = (getEl('provincia') && getEl('provincia').value) || getEl('provinciaActual').textContent;
-  const mercado = {
-    rangoConsulta: getEl('rangoConsulta').textContent,
-    mixPrivado: getEl('mixPrivado').textContent,
-    crecimiento: getEl('crecimientoSector').textContent,
-    dso: getEl('dsoPromedio').textContent,
-  };
-
-  // Contexto financiero (resumen rápido de tu simulador)
-  const finanzas = {
-    ticketMedio: Number(getEl('ticketMedio').value || 0),
-    pacientes: Number(getEl('serviciosMes').value || 0),
-    costesFijos: Number(getEl('costesFijos').value || 0),
-    margenPct: Number((getEl('margenActual').textContent || '0').replace('%','')) || 0
-  };
-
-  const out = getEl('strategyOutput');
+  const out = document.getElementById('strategyOutput');
   out.style.display = 'block';
   out.innerHTML = `
-    <div class="analysis-card" style="background:#eef2ff;border:1px solid #c7d2fe">
-      <h3 class="analysis-title">Generando estrategia…</h3>
-      <p>Analizando <strong>${provincia}</strong> con enfoque <strong>${tipo}</strong> en <strong>${ubicacion}</strong>.</p>
+    <div class="analysis-card" style="background:#f0f9ff;">
+      <h3 class="analysis-title">Estrategia Recomendada</h3>
+      <p>Generando estrategia con IA…</p>
     </div>
   `;
 
   try {
-    // Llamada a tu endpoint serverless en Vercel
+    // Lee valores de los selects/inputs existentes
+    const tipo       = document.getElementById('estrategiaTipo').value || 'premium';
+    const ubicacion  = document.getElementById('ubicacionTipo').value || 'centro';
+    const provincia  = (document.getElementById('provincia')?.value) || document.getElementById('provinciaActual')?.textContent || 'Madrid';
+
+    // “Datos del Sector” mostrados en la UI
+    const rangoConsulta = document.getElementById('rangoConsulta')?.textContent || '€90-180';
+    const mixPrivado    = document.getElementById('mixPrivado')?.textContent || '72%';
+    const crecimiento   = document.getElementById('crecimientoSector')?.textContent || '14%';
+    const dso           = document.getElementById('dsoPromedio')?.textContent || '48 días';
+
+    // Inputs financieros ya presentes
+    const ticketMedio  = Number(document.getElementById('ticketMedio')?.value || 110);
+    const pacientes    = Number(document.getElementById('serviciosMes')?.value || 180);
+    const costesFijos  = Number(document.getElementById('costesFijos')?.value || 12000);
+    // Si no tienes margenActual como texto, calcula con lastData o pon un valor por defecto
+    const margenPct    = Number((document.getElementById('margenActual')?.textContent || '65').toString().replace('%','')) || 65;
+
+    const payload = {
+      tipo,
+      ubicacion,
+      provincia,
+      mercado: { rangoConsulta, mixPrivado, crecimiento, dso },
+      finanzas: { ticketMedio, pacientes, costesFijos, margenPct }
+    };
+
     const res = await fetch('/api/strategy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo, ubicacion, provincia, mercado, finanzas })
+      body: JSON.stringify(payload)
     });
 
-    // Si el endpoint no responde OK, mostramos fallback
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json(); // esperado: { titulo, precio, canales, prioridad, bullets, rationale }
+    if (!res.ok) {
+      const msg = await res.text();
+      throw new Error(`Error ${res.status}: ${msg}`);
+    }
 
+    const data = await res.json(); // { titulo, precio, canales[], prioridad, ... }
     renderStrategyFromAPI(data, { tipo, ubicacion });
   } catch (err) {
-    // Fallback local si /api/strategy falla o aún no está desplegado
     out.innerHTML = `
-      <div class="analysis-card" style="background:#fef2f2;border:1px solid #fecaca">
-        <h3 class="analysis-title">No se pudo obtener la estrategia por IA</h3>
-        <p style="margin:.5rem 0 .75rem">Se muestra una recomendación base mientras revisas el endpoint <code>/api/strategy</code>.</p>
-        ${getFallbackStrategyHTML({ tipo, ubicacion })}
-        <p class="summary-muted" style="margin-top:.75rem">${(err && err.message) || 'Error desconocido'}</p>
+      <div class="analysis-card" style="background:#fff0f0; border:1px solid #fecaca;">
+        <h3 class="analysis-title" style="color:#dc2626;">Error al generar estrategia</h3>
+        <p>Mostramos una recomendación base mientras revisas el endpoint <code>/api/strategy</code>.</p>
+        ${getFallbackStrategyHTML({ tipo: document.getElementById('estrategiaTipo')?.value || 'premium',
+                                    ubicacion: document.getElementById('ubicacionTipo')?.value || 'centro' })}
+        <pre style="white-space:pre-wrap; font-size:.85rem; color:#7f1d1d; margin-top:.75rem">${String(err)}</pre>
       </div>
     `;
   }
 }
 
 function renderStrategyFromAPI(s, ctx) {
-  const out = getEl('strategyOutput');
+  const out = document.getElementById('strategyOutput');
   const titulo = s.titulo || 'Estrategia Recomendada';
   const precio = s.precio || '€110-130 por consulta';
-  const canales = Array.isArray(s.canales) ? s.canales.join(' + ') : (s.canales || 'Marketing digital + referencias médicas');
+  const canalesList = Array.isArray(s.canales) ? s.canales : [];
   const prioridad = s.prioridad || 'Construir reputación primeros 6 meses';
-  const bullets = Array.isArray(s.bullets) ? s.bullets.map(b=>`<li>${b}</li>`).join('') : '';
-  const rationale = s.rationale ? `<p class="summary-muted" style="margin-top:.5rem">${s.rationale}</p>` : '';
 
   out.innerHTML = `
-    <div class="analysis-card" style="background:#f0f9ff;border:1px solid #bae6fd">
+    <div class="analysis-card" style="background:#f0f9ff;">
       <h3 class="analysis-title">${titulo}</h3>
       <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
       <p><strong>Precio objetivo:</strong> ${precio}</p>
-      <p><strong>Canales:</strong> ${canales}</p>
-      <p><strong>Prioridad:</strong> ${prioridad}</p>
-      ${bullets ? `<ul style="margin-top:.5rem">${bullets}</ul>` : ''}
-      ${rationale}
+      <p><strong>Canales:</strong></p>
+      <ul style="margin-top:.25rem;">
+        ${canalesList.length ? canalesList.map(c => `<li>${c}</li>`).join('') : '<li>Marketing digital + referencias médicas</li>'}
+      </ul>
+      <p style="margin-top:.5rem;"><strong>Prioridad:</strong> ${prioridad}</p>
     </div>
   `;
 }
@@ -1339,13 +1344,21 @@ function getFallbackStrategyHTML(ctx){
       <h4 style="margin:.25rem 0 .5rem">Estrategia Recomendada (base)</h4>
       <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
       <p><strong>Precio objetivo:</strong> €110-130 por consulta</p>
-      <p><strong>Canales:</strong> Marketing digital + referencias médicas</p>
-      <p><strong>Prioridad:</strong> Construir reputación primeros 6 meses</p>
+      <p><strong>Canales:</strong></p>
+      <ul style="margin-top:.25rem;">
+        <li>Marketing digital</li>
+        <li>Redes sociales</li>
+        <li>Referencias médicas</li>
+        <li>Ferias de salud</li>
+      </ul>
+      <p style="margin-top:.5rem;"><strong>Prioridad:</strong> Construir reputación primeros 6 meses</p>
     </div>
   `;
 }
 
-function capitalize(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+// Si no tienes esta utilidad ya definida en tu código:
+function capitalize(s){ return (s||'').charAt(0).toUpperCase() + (s||'').slice(1); }
+
 
 
     /* ===================== REPORTS ===================== */
