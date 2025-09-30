@@ -1290,6 +1290,12 @@ async function generateStrategy() {
     });
 
     const data = await res.json();
+if (data.error) {
+  console.warn('⚠️ USANDO FALLBACK:', data.error);
+  alert('Aviso: Usando estrategia base (no personalizada). Razón: ' + data.error);
+} else {
+  console.log('✅ Estrategia generada con IA');
+}
 
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
