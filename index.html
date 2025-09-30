@@ -1290,6 +1290,11 @@ async function generateStrategy() {
     });
 
     const data = await res.json();
+
+// 1. Primero: check de HTTP status
+if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+// 2. Después: verificar si usó fallback
 if (data.error) {
   console.warn('⚠️ USANDO FALLBACK:', data.error);
   alert('Aviso: Usando estrategia base (no personalizada). Razón: ' + data.error);
@@ -1297,18 +1302,17 @@ if (data.error) {
   console.log('✅ Estrategia generada con IA');
 }
 
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-
-    if (data.error && data.titulo) {
-      out.innerHTML = `
-        <div style="background:#fef3c7; border:2px solid #f59e0b; border-radius:12px; padding:1rem; margin-bottom:1rem">
-          <strong>Usando estrategia base</strong><br>
-          <span style="font-size:0.875rem">
-            ${data.error}. Mostramos recomendaciones generales.
-          </span>
-        </div>
-      `;
-    }
+// 3. Mostrar warning visual si hay error pero datos válidos
+if (data.error && data.titulo) {
+  out.innerHTML = `
+    <div style="background:#fef3c7; border:2px solid #f59e0b; border-radius:12px; padding:1rem; margin-bottom:1rem">
+      <strong>Usando estrategia base</strong><br>
+      <span style="font-size:0.875rem">
+        ${data.error}. Mostramos recomendaciones generales.
+      </span>
+    </div>
+  `;
+}
 
     renderStrategyFromAPI(data, { tipo: payload.tipo, ubicacion: payload.ubicacion });
 
