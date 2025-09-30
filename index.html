@@ -1514,14 +1514,13 @@ function capitalize(s){ return (s||'').charAt(0).toUpperCase() + (s||'').slice(1
     }, 200);
 // ========== ADMIN: SCRAPER DE DOCTORALIA ==========
 (function initAdminScraper() {
-  // Detectar si eres admin (Ctrl+Shift+A tres veces)
   let adminClicks = 0;
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'A') {
       adminClicks++;
       if (adminClicks >= 3) {
         document.getElementById('adminScraperBtn').style.display = 'block';
-        console.log('🔧 Modo admin activado');
+        console.log('Modo admin activado'); // SIN EMOJI
         adminClicks = 0;
       }
       setTimeout(() => { adminClicks = 0; }, 2000);
@@ -1537,7 +1536,7 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
   
   const btn = this;
   btn.disabled = true;
-  btn.textContent = '⏳ Scrapeando...';
+  btn.textContent = 'Scrapeando...'; // SIN EMOJI
   
   try {
     const res = await fetch('/api/scrape-doctoralia', {
@@ -1552,26 +1551,32 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
       throw new Error(data.error || 'Error en scraping');
     }
     
-    console.log('✅ DATOS ACTUALIZADOS PARA ' + provincia + ':');
+    console.log('DATOS ACTUALIZADOS PARA ' + provincia + ':');
     console.log('=====================================');
-    console.log('Copia este código en datosProvincia:');
+    console.log('Copia este codigo en datosProvincia:');
     console.log('=====================================');
-    console.log(`'${provincia}': {`);
-    console.log(`  consulta: ${data.codigoActualizar.consulta},`);
-    console.log(`  mixPrivado: ${data.codigoActualizar.mixPrivado},`);
-    console.log(`  crecimiento: ${data.codigoActualizar.crecimiento},`);
-    console.log(`  dso: ${data.codigoActualizar.dso}`);
-    console.log(`},`);
+    console.log("'" + provincia + "': {");
+    console.log('  consulta: ' + data.codigoActualizar.consulta + ',');
+    console.log('  mixPrivado: ' + data.codigoActualizar.mixPrivado + ',');
+    console.log('  crecimiento: ' + data.codigoActualizar.crecimiento + ',');
+    console.log('  dso: ' + data.codigoActualizar.dso);
+    console.log('},');
     console.log('=====================================');
     console.log('Detalles:', data);
     
-    alert(`✅ Scraping exitoso!\n\nMira la consola y copia el código actualizado.\n\nMuestras: ${data.muestras}\nRango: ${data.consulta}`);
+    alert('Scraping exitoso!\n\nMira la consola y copia el codigo actualizado.\n\nMuestras: ' + data.muestras + '\nRango: ' + data.consulta);
     
   } catch (error) {
     console.error('Error:', error);
-    alert('❌ Error: ' + error.message);
+    alert('Error: ' + error.message);
   } finally {
     btn.disabled = false;
+    btn.textContent = 'Admin: Actualizar Precios'; // SIN EMOJI
+  }
+});
+  </script>
+</body>
+</html>tn.disabled = false;
     btn.textContent = '🔧 Admin: Actualizar Precios';
   }
 });
