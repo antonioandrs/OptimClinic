@@ -263,13 +263,20 @@ function extractPreciosDoctoralia(html) {
 
 // Funciones auxiliares
 function extractClinicName(url, title) {
-  // Extraer nombre del dominio o título
-  const domainMatch = url.match(/(?:https?:\/\/)?(?:www\.)?([^.\/]+)/);
-  const domainName = domainMatch ? domainMatch[1] : '';
+  // Primero intentar extraer del dominio (más confiable)
+  const domainMatch = url.match(/(?:https?:\/\/)?(?:www\.)?([^.\/]+)\./);
+  let domainName = domainMatch ? domainMatch[1] : '';
   
-  // Limpiar nombre del título si existe
-  if (title && title.length < 100) {
-    return title.split(/[|-]/)[0].trim();
+  // Capitalizar primera letra
+  domainName = domainName.charAt(0).toUpperCase() + domainName.slice(1);
+  
+  // Si el título es corto y no tiene muchos separadores, usarlo
+  if (title && title.length < 50 && !title.includes('|') && !title.includes('-')) {
+    // Extraer solo el nombre de la clínica (primera parte antes de puntuación)
+    const cleanTitle = title.split(/[|\-–—:]/)[0].trim();
+    if (cleanTitle.length < 30) {
+      return cleanTitle;
+    }
   }
   
   return domainName;
@@ -278,8 +285,8 @@ function extractClinicName(url, title) {
 function extractCity(markdown, url) {
   const ciudades = [
     'madrid', 'barcelona', 'valencia', 'sevilla', 'zaragoza',
-    'málaga', 'murcia', 'alicante', 'bilbao', 'granada',
-    'córdoba', 'valladolid', 'mallorca', 'vigo', 'gijón'
+    'málaga', 'malaga', 'murcia', 'alicante', 'bilbao', 'granada',
+    'córdoba', 'cordoba', 'valladolid', 'mallorca', 'vigo', 'gijón', 'gijon'
   ];
   
   const textLower = (markdown + ' ' + url).toLowerCase();
@@ -290,7 +297,7 @@ function extractCity(markdown, url) {
     }
   }
   
-  return 'españa';
+  return '';
 }
 
 function extractTitleFromMarkdown(markdown) {
