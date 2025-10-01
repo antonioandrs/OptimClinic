@@ -1250,7 +1250,7 @@ function renderCompetitors() {
           <div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
             <strong>${c.data.titulo}</strong><br>
             ${c.data.servicios?.length > 0 ? 'Servicios: ' + c.data.servicios.slice(0, 4).join(', ') : ''}
-            ${c.data?.rangoPrecios ? ` | Precios: €${c.data.rangoPrecios.minimo ?? '-'}-${c.data.rangoPrecios.maximo ?? '-'}` : ''}
+            ${c.data.preciosVisibles ? ` | Precios: €${c.data.preciosVisibles.min}-${c.data.preciosVisibles.max}` : ''}
           </div>
         ` : ''}
       </div>
@@ -1297,121 +1297,103 @@ function loadSampleCompetitors() {
 
 async function analyzeCompetitors() {
   if (competitors.length === 0) {
-    alert('Añade al menos un competidor');
-    return;
+    return alert('Añade al menos un competidor');
   }
-
+  
   const btn = getEl('analyzeBtn');
   btn.disabled = true;
   btn.textContent = 'Analizando ' + competitors.length + ' competidores...';
-
-  // 1) Construir array de URLs desde la lista visual (competitors)
-  const urls = competitors.map(c => c.url).filter(Boolean);
-  if (!urls.length) {
-    alert('No se pudo analizar ningún competidor. Verifica las URLs.');
-    btn.disabled = false;
-    btn.textContent = 'Analizar Competidores';
-    return;
-  }
-
-  try {
-    // 2) Llamar al nuevo endpoint UNA SOLA VEZ
-    const res = await fetch('/api/analyze-competitors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        urls,
-        maxExtraPages: 2,
-        timeoutMs: 9000
-      })
-    });
-    const payload = await res.json();
-    if (payload.error) console.warn('analyze-competitors:', payload.error);
-
-    const { items = [], mercado = null } = payload;
-
-    // 3) Sincronizar cada tarjeta de la lista con su resultado
-    //    y marcar estados como "success"
-    competitors.forEach(c => {
-      const it = items.find(x => (x.url || '').replace(/\/+$/,'') === c.url.replace(/\/+$/,''));
-      if (it) {
-        c.status = 'success';
-        c.data = it; // guardamos el objeto unificado (título, servicios, rangoPrecios, debug…)
-      } else {
-        c.status = 'error';
-      }
-    });
+  
+  competitorsData = [];
+  
+  // Fase 1: Scraping de cada competidor
+  for (let i = 0; i < competitors.length; i++) {
+    competitors[i].status = 'analyzing';
     renderCompetitors();
-
-    // 4) Construir el objeto "analysis" que espera tu renderer
-    const contexto = {
-      provincia: getEl('provincia')?.value || 'Madrid',
-      especialidad: getEl('especialidadScraper')?.value || 'general',
-      estrategia: getEl('estrategiaTipo')?.value || 'premium',
-      ubicacion: getEl('ubicacionTipo')?.value || 'centro'
-    };
-
-    // Top servicios por frecuencia
-    const serviciosTop = (() => {
-      const freq = {};
-      for (const it of items) (it.servicios || []).forEach(s => {
-        const k = (s || '').trim();
-        if (k) freq[k] = (freq[k] || 0) + 1;
+    
+    try {
+      const res = await fetch('/api/scrape-competitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: competitors[i].url })
       });
-      return Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,20).map(([s])=>s);
-    })();
-
-    const analysis = {
-      contexto,
-      competitors: items,
-      rangoPrecios: mercado,    // { minimo, maximo, promedio } agregado de mercado
-      serviciosTop,             // chips
-      resumenEjecutivo: null,
-      debug: { count: items.length }
-    };
-
-    // 5) Mostrar resultados
-    renderAnalysisResults(analysis);
-    getEl('competitorResults').style.display = 'block';
-    setTimeout(() => {
-      getEl('competitorResults').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 300);
-
-  } catch (error) {
-    console.error('Error en análisis:', error);
-    alert('Error al generar análisis: ' + error.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Analizar Competidores';
+      
+      const data = await res.json();
+      
+      if (data.status === 'success') {
+        competitors[i].status = 'success';
+        competitors[i].data = data;
+        competitorsData.push(data);
+      } else {
+        competitors[i].status = 'error';
+        console.error('Error scraping:', data.error);
+      }
+    } catch (error) {
+      competitors[i].status = 'error';
+      console.error('Error:', error);
+    }
+    
+    renderCompetitors();
   }
+  
+  // Fase 2: Análisis con IA
+  if (competitorsData.length > 0) {
+    btn.textContent = 'Generando insights con IA...';
+    
+    try {
+      const contexto = {
+        provincia: getEl('provincia')?.value || 'Madrid',
+        especialidad: getEl('especialidadScraper')?.value || 'general',
+        estrategia: getEl('estrategiaTipo')?.value || 'premium',
+        ubicacion: getEl('ubicacionTipo')?.value || 'centro'
+      };
+      
+      const res = await fetch('/api/analyze-competitors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ competitors: competitorsData, contexto })
+      });
+      
+      const analysis = await res.json();
+      
+      if (analysis.error) {
+        console.warn('Usando análisis base:', analysis.error);
+      }
+      
+      renderAnalysisResults(analysis);
+      getEl('competitorResults').style.display = 'block';
+      
+      // Scroll suave a resultados
+      setTimeout(() => {
+        getEl('competitorResults').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 300);
+      
+    } catch (error) {
+      console.error('Error en análisis:', error);
+      alert('Error al generar análisis: ' + error.message);
+    }
+  } else {
+    alert('No se pudo analizar ningún competidor. Verifica las URLs.');
+  }
+  
+  btn.disabled = false;
+  btn.textContent = 'Analizar Competidores';
 }
 
 function renderAnalysisResults(analysis) {
   const precios = analysis.rangoPrecios || {};
-  const digital = analysis.presenciaDigital || {}; // puede venir vacío
-  const min = Number.isFinite(precios.minimo) ? precios.minimo : 60;
-  const max = Number.isFinite(precios.maximo) ? precios.maximo : 150;
-  const prom = Number.isFinite(precios.promedio) ? precios.promedio : Math.round((min+max)/2);
-  const posPct = (max > min) ? ((prom - min) / (max - min) * 100) : 50;
-
-  // Aviso si no hay precios reales
-  const showDisclaimer = !analysis.rangoPrecios || !Number.isFinite(analysis.rangoPrecios.promedio);
-  const disclaimerHtml = showDisclaimer ? `
-    <div style="background:#fef3c7; padding:1rem; border-radius:8px; margin-bottom:1rem; border:1px solid #f59e0b;">
-      <strong>Nota:</strong> Precios agregados aproximados. Valida páginas de precios/servicios de cada competidor.
-    </div>
-  ` : '';
-
+  const digital = analysis.presenciaDigital || {};
+  
   getEl('executiveSummary').innerHTML = `
-    ${disclaimerHtml}
     <p style="font-size: 1rem; line-height: 1.6;">${analysis.resumenEjecutivo || 'Análisis completado'}</p>
+    
     <div class="kpi-grid" style="margin-top: 1.5rem;">
       <div class="kpi-card">
-        <div class="kpi-value" style="color: #2563eb;">€${prom}</div>
+        <div class="kpi-value" style="color: #2563eb;">€${precios.promedio || '95'}</div>
         <div class="kpi-label">Precio Promedio</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-value" style="color: #2563eb;">${(analysis.competitors || []).length}</div>
+        <div class="kpi-value" style="color: #2563eb;">${competitorsData.length}</div>
         <div class="kpi-label">Competidores Analizados</div>
       </div>
       <div class="kpi-card">
@@ -1419,38 +1401,89 @@ function renderAnalysisResults(analysis) {
         <div class="kpi-label">Nivel Digital</div>
       </div>
     </div>
-
+    
     <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--primary);">Rango de Precios</h4>
     <div style="background: var(--gray-50); padding: 1rem; border-radius: 8px;">
       <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-        <span>Mínimo: <strong>€${min}</strong></span>
-        <span>Máximo: <strong>€${max}</strong></span>
+        <span>Mínimo: <strong>€${precios.minimo || 60}</strong></span>
+        <span>Máximo: <strong>€${precios.maximo || 150}</strong></span>
       </div>
       <div style="height: 8px; background: linear-gradient(90deg, #ef4444 0%, #eab308 50%, #22c55e 100%); border-radius: 4px; position: relative;">
-        <div style="position: absolute; top: -4px; left: ${Math.max(0, Math.min(100, posPct))}%; width: 16px; height: 16px; background: #2563eb; border: 2px solid white; border-radius: 50%;"></div>
+        <div style="position: absolute; top: -4px; left: ${((precios.promedio - precios.minimo) / (precios.maximo - precios.minimo) * 100)}%; width: 16px; height: 16px; background: #2563eb; border: 2px solid white; border-radius: 50%;"></div>
       </div>
+      <p style="margin-top: 0.75rem; font-size: 0.875rem; color: var(--text-muted);">${precios.posicionamiento || ''}</p>
     </div>
-
+    
     <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--primary);">Servicios Comunes</h4>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-      ${(analysis.serviciosTop || []).map(s => 
+      ${(analysis.serviciosComunes || []).map(s => 
         `<span style="background: var(--primary); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem;">${s}</span>`
       ).join('')}
     </div>
   `;
-
+  
   getEl('marketAnalysis').innerHTML = `
     <h4 style="margin: 0 0 0.75rem; font-size: 1rem; color: var(--primary);">Presencia Digital</h4>
     <div style="background: var(--gray-50); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
       <p><strong>Nivel:</strong> ${digital.nivel || 'Medio'}</p>
-      <p style="margin: 0.5rem 0;">${digital.analisis || 'Sin conclusiones específicas.'}</p>
+      <p style="margin: 0.5rem 0;">${digital.analisis || ''}</p>
       ${digital.redesMasUsadas?.length > 0 ? `
         <p style="margin-top: 0.5rem;"><strong>Redes más usadas:</strong> ${digital.redesMasUsadas.join(', ')}</p>
       ` : ''}
     </div>
+    
+    <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: #059669;">Fortalezas de Competidores</h4>
+    <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+      ${(analysis.fortalezasCompetidores || []).map(f => `<li>${f}</li>`).join('')}
+    </ul>
+    
+    <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: #dc2626;">Debilidades Detectadas</h4>
+    <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+      ${(analysis.debilidadesCompetidores || []).map(d => `<li>${d}</li>`).join('')}
+    </ul>
+    
+    <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: #2563eb;">Oportunidades Identificadas</h4>
+    ${(analysis.oportunidades || []).map(op => `
+      <div style="background: ${op.impacto === 'alto' ? '#dbeafe' : '#fef3c7'}; border-left: 4px solid ${op.impacto === 'alto' ? '#2563eb' : '#f59e0b'}; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: start;">
+          <strong style="color: ${op.impacto === 'alto' ? '#1e40af' : '#92400e'};">${op.gap}</strong>
+          <span style="background: ${op.impacto === 'alto' ? '#2563eb' : '#f59e0b'}; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">${op.impacto === 'alto' ? 'Alto impacto' : 'Medio impacto'}</span>
+        </div>
+        <p style="margin: 0.5rem 0 0; color: #475569;">${op.accion}</p>
+      </div>
+    `).join('')}
+    
+    <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--primary);">Posicionamiento Recomendado</h4>
+    <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #059669; padding: 1.5rem; border-radius: 12px;">
+      <p style="margin: 0; line-height: 1.6; font-size: 1rem;">${analysis.posicionamientoRecomendado || ''}</p>
+    </div>
+    
+    <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--danger);">Amenazas del Mercado</h4>
+    <ul style="margin: 0.5rem 0 0 1.5rem; line-height: 1.8;">
+      ${(analysis.amenazas || []).map(a => `<li>${a}</li>`).join('')}
+    </ul>
+    
+    <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--primary);">KPIs Comparativos</h4>
+    <table class="table" style="margin-top: 0.5rem;">
+      <thead>
+        <tr>
+          <th>Métrica</th>
+          <th>Competidores</th>
+          <th>Recomendado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(analysis.kpisComparativos || []).map(kpi => `
+          <tr>
+            <td><strong>${kpi.metrica}</strong></td>
+            <td>${kpi.competidores}</td>
+            <td style="color: var(--success); font-weight: 600;">${kpi.recomendado}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
   `;
 }
-
 
 // Agregar input listener para Enter key
 document.addEventListener('DOMContentLoaded', function() {

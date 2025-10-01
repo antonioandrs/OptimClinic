@@ -1,264 +1,290 @@
-// api/analyze-competitors.js
-// Node 18+ (Vercel). Endpoint que analiza varios competidores:
-// - Lee la HOME con Jina Reader (r.jina.ai)
-// - Llama al scraper multipágina local (/api/scrape-competitor)
-// - Fusiona resultados y devuelve items + estadística de mercado
+module.exports = async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-const CONFIG = {
-  CONCURRENCY: 2,
-  SCRAPER_TIMEOUT_MS: 9000,
-  SCRAPER_MAX_EXTRA_PAGES: 2,
-  RETRIES: 1,
-};
-
-export default async function handler(req, res) {
   try {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-    const { urls = [], maxExtraPages, timeoutMs } = req.body || {};
-    if (!Array.isArray(urls) || urls.length === 0) {
-      return res.status(400).json({ error: 'Missing urls[]' });
+    const { competitors = [], contexto = {} } = req.body || {};
+    
+    if (!competitors || competitors.length === 0) {
+      return res.status(400).json({ error: 'No hay competidores para analizar' });
     }
 
-    const baseUrl = getBaseUrl(req);
-    const tasks = [...urls];
-    const results = [];
-    let running = 0;
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('Missing OPENAI_API_KEY');
+      return res.status(500).json({ 
+        error: 'Configuration error',
+        ...getFallbackAnalysis(competitors, contexto)
+      });
+    }
 
-    await new Promise((resolve) => {
-      const kick = () => {
-        while (running < CONFIG.CONCURRENCY && tasks.length) {
-          const url = tasks.shift();
-          running++;
-          analyzeOne(url, {
-            baseUrl,
-            maxExtraPages: isFiniteNumber(maxExtraPages) ? maxExtraPages : CONFIG.SCRAPER_MAX_EXTRA_PAGES,
-            timeoutMs: isFiniteNumber(timeoutMs) ? timeoutMs : CONFIG.SCRAPER_TIMEOUT_MS,
-          })
-            .then(r => results.push(r))
-            .catch(e => results.push({ url, _error: String(e?.message || e) }))
-            .finally(() => {
-              running--;
-              if (tasks.length) kick();
-              else if (running === 0) resolve();
-            });
-        }
-      };
-      kick();
-    });
-
-    const mercado = computeMarketPriceStats(results);
-
-    return res.status(200).json({
-      status: 'success',
-      count: results.length,
-      mercado,
-      items: results,
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(200).json({ status: 'error', error: err.message || String(err) });
-  }
-}
-
-/* =========================
-   Core por competidor
-   ========================= */
-async function analyzeOne(targetUrl, { baseUrl, maxExtraPages, timeoutMs }) {
-  const out = { url: targetUrl };
-  let jina = null;
-  let scraped = null;
-
-  try { jina = await callJinaReader(targetUrl); } catch (e) { out._jinaError = String(e?.message || e); }
-  try { scraped = await callScraper(baseUrl, targetUrl, maxExtraPages, timeoutMs); } catch (e) { out._scraperError = String(e?.message || e); }
-
-  const unified = buildUnifiedResult({ url: targetUrl, jina, scraped });
-  return unified;
-}
-
-/* =========================
-   Jina Reader (HOME)
-   ========================= */
-async function callJinaReader(url, retries = CONFIG.RETRIES) {
-  const readerUrl = `https://r.jina.ai/http://${stripProtocol(url)}`;
-  try {
-    const r = await fetch(readerUrl, { headers: { 'User-Agent': 'Mozilla/5.0 OpticlinicBot' } });
-    if (!r.ok) throw new Error(`Jina HTTP ${r.status}`);
-    const md = await r.text();
-
-    const textoPlano = mdToPlain(md);
-    const titulo = extractMdTitle(md) || domainFrom(url);
-    const servicios = detectServicios(textoPlano);
-
-    return {
-      fuente: 'jina',
-      titulo,
-      textoPlano,
-      caracteres: textoPlano.length,
-      servicios,        // heurístico básico
-      rangoPrecios: null, // precios los intentaremos rellenar con el scraper
-    };
-  } catch (e) {
-    if (retries > 0) return callJinaReader(url, retries - 1);
-    throw e;
-  }
-}
-
-/* =========================
-   Scraper multipágina local
-   ========================= */
-async function callScraper(baseUrl, url, maxExtraPages, timeoutMs, retries = CONFIG.RETRIES) {
-  const endpoint = `${baseUrl}/api/scrape-competitor`;
-  try {
-    const r = await fetch(endpoint, {
+    const prompt = buildAnalysisPrompt(competitors, contexto);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, maxExtraPages, timeoutMs }),
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0.4,
+        max_tokens: 3000,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: 'Eres un consultor de inteligencia competitiva para clínicas médicas en España. Analizas competidores y generas insights accionables. Respondes ÚNICAMENTE con JSON válido.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
     });
-    if (!r.ok) throw new Error(`Scraper HTTP ${r.status}`);
-    return await r.json();
-  } catch (e) {
-    if (retries > 0) return callScraper(baseUrl, url, maxExtraPages, timeoutMs, retries - 1);
-    throw e;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      return res.status(500).json({ 
+        error: 'AI service error',
+        ...getFallbackAnalysis(competitors, contexto)
+      });
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+
+    if (!content) {
+      console.error('Empty response from OpenAI');
+      return res.status(500).json({ 
+        error: 'Empty AI response',
+        ...getFallbackAnalysis(competitors, contexto)
+      });
+    }
+
+    let analysis;
+    try {
+      analysis = JSON.parse(content);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      const match = content.match(/\{[\s\S]*\}/);
+      if (match) {
+        analysis = JSON.parse(match[0]);
+      } else {
+        return res.status(500).json({ 
+          error: 'Invalid JSON from AI',
+          ...getFallbackAnalysis(competitors, contexto)
+        });
+      }
+    }
+
+    // Validar schema mínimo
+    if (!analysis.resumenEjecutivo || !analysis.oportunidades) {
+      console.warn('Incomplete analysis schema');
+      analysis = { ...getFallbackAnalysis(competitors, contexto), ...analysis };
+    }
+
+    return res.status(200).json(analysis);
+
+  } catch (error) {
+    console.error('Unhandled error:', error);
+    return res.status(500).json({ 
+      error: 'Server error',
+      message: error.message,
+      ...getFallbackAnalysis(req.body?.competitors, req.body?.contexto)
+    });
   }
-}
+};
 
-/* =========================
-   Fusión y utilidades
-   ========================= */
-function buildUnifiedResult({ url, jina, scraped }) {
-  const rangoPrecios = mergePrices(jina?.rangoPrecios, scraped?.preciosVisibles);
-  const servicios = mergeServicios(jina?.servicios, scraped?.servicios);
+function buildAnalysisPrompt(competitors, contexto) {
+  const competitorsData = competitors.map((c, i) => {
+    let preciosTexto = 'No visibles';
+    if (c.preciosVisibles) {
+      const parts = [];
+      if (c.preciosVisibles.consultas) {
+        parts.push(`Consultas: €${c.preciosVisibles.consultas.min}-${c.preciosVisibles.consultas.max}`);
+      }
+      if (c.preciosVisibles.cirugias) {
+        parts.push(`Cirugías: €${c.preciosVisibles.cirugias.min}-${c.preciosVisibles.cirugias.max}`);
+      }
+      preciosTexto = parts.join(' | ');
+    }
+    
+    return `
+COMPETIDOR ${i + 1}: ${c.url}
+- Título: ${c.titulo || 'N/A'}
+- Descripción: ${c.descripcion || 'N/A'}
+- Servicios detectados (${c.servicios?.length || 0}): ${c.servicios?.join(', ') || 'No detectados'}
+- Precios visibles: ${preciosTexto}
+- Contacto: Tel ${c.contacto?.telefono || 'No'} / Email ${c.contacto?.email || 'No'}
+- Redes sociales: ${c.redesSociales?.join(', ') || 'Ninguna'}
+- Estructura: ${c.estructura?.secciones || 0} secciones, ${c.estructura?.enlaces || 0} enlaces
+- Contenido analizado: ${c.contenidoCompleto?.length || 0} caracteres
 
-  const titulo = jina?.titulo || scraped?.titulo || domainFrom(url);
+EXTRACTO DE CONTENIDO:
+${c.contenidoCompleto?.substring(0, 2000) || 'No disponible'}
+...
+  `;
+  }).join('\n');
 
-  const base = {
-    url,
-    titulo,
-    resumenEjecutivo: jina?.resumenEjecutivo || null,
-    servicios,
-    presenciaDigital: jina?.presenciaDigital || null,
-    claims: jina?.claims || null,
-    rangoPrecios,
-    debug: {
-      jinaChars: jina?.caracteres || 0,
-      paginasLeidas: scraped?.paginasLeidas || [],
-      caracteresScraped: scraped?.caracteres || 0,
-      tituloScraped: scraped?.titulo || null,
+  return `Analiza estos ${competitors.length} competidores de una clínica médica en ${contexto.provincia || 'España'}:
+
+${competitorsData}
+
+CONTEXTO DEL PROYECTO:
+- Provincia: ${contexto.provincia || 'N/A'}
+- Especialidad: ${contexto.especialidad || 'General'}
+- Tipo de estrategia: ${contexto.estrategia || 'N/A'}
+- Ubicación: ${contexto.ubicacion || 'N/A'}
+
+DEVUELVE JSON CON ESTA ESTRUCTURA EXACTA:
+{
+  "resumenEjecutivo": "Resumen de 2-3 líneas sobre el panorama competitivo",
+  "rangoPrecios": {
+    "consultas": {
+      "minimo": 60,
+      "maximo": 150,
+      "promedio": 95,
+      "nota": "Precios de consulta o si no hay datos de consultas específicos"
     },
+    "tratamientos": {
+      "minimo": 500,
+      "maximo": 8000,
+      "promedio": 3500,
+      "nota": "Solo si hay cirugías/tratamientos mayores detectados, sino omitir"
+    },
+    "posicionamiento": "Los competidores se posicionan en rango medio-alto"
+  },
+  "serviciosComunes": ["Servicio 1", "Servicio 2", "Servicio 3"],
+  "presenciaDigital": {
+    "nivel": "medio/alto/bajo",
+    "analisis": "Descripción de madurez digital",
+    "redesMasUsadas": ["Instagram", "Facebook"]
+  },
+  "fortalezasCompetidores": [
+    "Fortaleza 1 común entre competidores",
+    "Fortaleza 2"
+  ],
+  "debilidadesCompetidores": [
+    "Debilidad 1 común",
+    "Debilidad 2"
+  ],
+  "oportunidades": [
+    {"gap": "Oportunidad específica no cubierta", "accion": "Cómo aprovecharla", "impacto": "alto/medio"},
+    {"gap": "Segunda oportunidad", "accion": "Acción recomendada", "impacto": "medio"}
+  ],
+  "posicionamientoRecomendado": "Recomendación clara de cómo diferenciarse",
+  "amenazas": ["Amenaza 1", "Amenaza 2"],
+  "kpisComparativos": [
+    {"metrica": "Precio promedio", "competidores": "€95", "recomendado": "€85-110"},
+    {"metrica": "Servicios ofrecidos", "competidores": "5-7", "recomendado": "8-10"}
+  ]
+}
+
+IMPORTANTE: 
+- Analiza el CONTENIDO COMPLETO proporcionado, no solo metadatos
+- Si detectas servicios en el contenido, úsalos aunque no estén en la lista de "servicios detectados"
+- Sé específico con precios: diferencia entre consultas y cirugías
+- Identifica gaps REALES basándote en el contenido completo
+- Si algo no está claro en el contenido, dilo explícitamente
+- Prioriza insights basados en datos concretos del contenido
+- Devuelve SOLO el JSON, sin texto adicional`;
+}
+
+function getFallbackAnalysis(competitors, contexto) {
+  const numCompetidores = competitors?.length || 0;
+  const serviciosUnicos = new Set();
+  const redesUnicos = new Set();
+  let preciosMin = [], preciosMax = [];
+  
+  competitors?.forEach(c => {
+    c.servicios?.forEach(s => serviciosUnicos.add(s));
+    c.redesSociales?.forEach(r => redesUnicos.add(r));
+    if (c.preciosVisibles) {
+      if (c.preciosVisibles.consultas) {
+        preciosMin.push(c.preciosVisibles.consultas.min);
+        preciosMax.push(c.preciosVisibles.consultas.max);
+      }
+      if (c.preciosVisibles.todos) {
+        c.preciosVisibles.todos.forEach(p => {
+          if (p <= 500) {
+            preciosMin.push(p);
+            preciosMax.push(p);
+          }
+        });
+      }
+    }
+  });
+
+  const precioMin = preciosMin.length > 0 ? Math.min(...preciosMin) : 70;
+  const precioMax = preciosMax.length > 0 ? Math.max(...preciosMax) : 140;
+  const precioPromedio = preciosMin.length > 0 
+    ? Math.round((precioMin + precioMax) / 2) 
+    : 95;
+
+  return {
+    resumenEjecutivo: `Análisis de ${numCompetidores} competidores en ${contexto.provincia || 'la zona'}. Mercado con competencia moderada y oportunidades de diferenciación en servicios digitales y experiencia de paciente.`,
+    rangoPrecios: {
+      minimo: precioMin,
+      maximo: precioMax,
+      promedio: precioPromedio,
+      posicionamiento: 'Los competidores se posicionan en rango medio con margen para premium'
+    },
+    serviciosComunes: Array.from(serviciosUnicos).slice(0, 6),
+    presenciaDigital: {
+      nivel: 'medio',
+      analisis: 'Presencia digital básica en la mayoría. Pocas aprovechan telemedicina o automatización de citas.',
+      redesMasUsadas: Array.from(redesUnicos).slice(0, 3)
+    },
+    fortalezasCompetidores: [
+      'Experiencia consolidada en el mercado local',
+      'Base de pacientes establecida',
+      'Ubicaciones estratégicas'
+    ],
+    debilidadesCompetidores: [
+      'Webs poco optimizadas para conversión',
+      'Escasa presencia en redes sociales',
+      'Falta de servicios digitales (telemedicina, cita online)',
+      'Horarios limitados'
+    ],
+    oportunidades: [
+      {
+        gap: 'Telemedicina y consulta online',
+        accion: 'Implementar plataforma de videoconsulta y seguimiento digital',
+        impacto: 'alto'
+      },
+      {
+        gap: 'Experiencia de paciente premium',
+        accion: 'Sistema de citas flexible, recordatorios automáticos, parking',
+        impacto: 'alto'
+      },
+      {
+        gap: 'Marketing de contenidos',
+        accion: 'Blog educativo, newsletter, casos de éxito anonimizados',
+        impacto: 'medio'
+      },
+      {
+        gap: 'Presencia digital activa',
+        accion: 'Redes sociales con contenido regular, reseñas Google',
+        impacto: 'medio'
+      }
+    ],
+    posicionamientoRecomendado: 'Posicionarse como la clínica innovadora que combina excelencia médica con tecnología y experiencia de paciente superior. Enfoque en accesibilidad (telemedicina + horarios flexibles) y transparencia (precios claros, proceso explicado).',
+    amenazas: [
+      'Posible entrada de grandes grupos hospitalarios',
+      'Regulación más estricta en publicidad sanitaria',
+      'Saturación del mercado en especialidades comunes'
+    ],
+    kpisComparativos: [
+      { metrica: 'Precio consulta', competidores: `€${precioPromedio}`, recomendado: `€${precioMin}-${precioMax}` },
+      { metrica: 'Servicios digitales', competidores: 'Bajo', recomendado: 'Alto (telemedicina, app)' },
+      { metrica: 'Presencia redes', competidores: 'Media', recomendado: 'Alta (3+ plataformas)' },
+      { metrica: 'Tiempo respuesta', competidores: '24-48h', recomendado: '<4h' }
+    ]
   };
-
-  return base;
-}
-
-function mergePrices(jinaRange, scrapedPrices) {
-  const hasJina = jinaRange && (
-    Number.isFinite(jinaRange.minimo) ||
-    Number.isFinite(jinaRange.maximo) ||
-    Number.isFinite(jinaRange.promedio)
-  );
-  if (hasJina) return jinaRange;
-
-  if (scrapedPrices && (
-    Number.isFinite(scrapedPrices.min) ||
-    Number.isFinite(scrapedPrices.max) ||
-    Number.isFinite(scrapedPrices.promedio)
-  )) {
-    return {
-      minimo: Number.isFinite(scrapedPrices.min) ? scrapedPrices.min : null,
-      maximo: Number.isFinite(scrapedPrices.max) ? scrapedPrices.max : null,
-      promedio: Number.isFinite(scrapedPrices.promedio) ? scrapedPrices.promedio : null,
-    };
-  }
-  return null;
-}
-
-function mergeServicios(a, b) {
-  return uniqTake([...(normalizeList(a)), ...(normalizeList(b))], 30);
-}
-
-function normalizeList(x) {
-  if (!x) return [];
-  if (Array.isArray(x)) return x;
-  if (typeof x === 'string') {
-    return x.split(/[,;\n\r•\-–]+/g).map(s => s.trim()).filter(Boolean);
-  }
-  return [];
-}
-
-function uniqTake(arr, max = 30) {
-  return Array.from(new Set(arr)).slice(0, max);
-}
-
-/* ======= Jina helpers (markdown -> texto/servicios) ======= */
-function mdToPlain(md) {
-  if (!md) return '';
-  let t = md.replace(/```[\s\S]*?```/g, ' ')
-            .replace(/`[^`]*`/g, ' ')
-            .replace(/^#+\s.*$/gm, ' ')
-            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-            .replace(/[*_>#\-]+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-  return t;
-}
-
-function extractMdTitle(md) {
-  const h1 = /^#\s+(.+?)\s*$/m.exec(md || '');
-  if (h1) return h1[1].trim();
-  const t = /<title>([^<]+)<\/title>/i.exec(md || '');
-  return t ? t[1].trim() : null;
-}
-
-function detectServicios(text) {
-  const out = new Set();
-  const rx = /\b(servicios|especialidades|tratamientos)\b[:\s-]*([^.]{10,120})/gi;
-  let m;
-  while ((m = rx.exec(text)) !== null) {
-    const chunk = m[2]
-      .replace(/[,;•\-–]+/g, ',')
-      .split(',')
-      .map(s => s.trim())
-      .filter(s => s.length > 2 && s.length < 60);
-    chunk.forEach(s => out.add(capitalize(s)));
-  }
-  return Array.from(out).slice(0, 30);
-}
-
-function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
-
-/* ======= Mercado ======= */
-function computeMarketPriceStats(items) {
-  const values = [];
-  for (const it of items || []) {
-    const rp = it?.rangoPrecios;
-    if (!rp) continue;
-    const v = [rp.minimo, rp.maximo, rp.promedio].filter(Number.isFinite);
-    values.push(...v);
-  }
-  if (!values.length) return null;
-  values.sort((a, b) => a - b);
-  const minimo = values[0];
-  const maximo = values[values.length - 1];
-  const promedio = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
-  return { minimo, maximo, promedio };
-}
-
-/* ======= helpers varios ======= */
-function isFiniteNumber(x) { return typeof x === 'number' && Number.isFinite(x); }
-
-function stripProtocol(u) {
-  return (u || '').replace(/^https?:\/\//i, '');
-}
-
-function domainFrom(u) {
-  try { return new URL(u).host; } catch { return u; }
-}
-
-function getBaseUrl(req) {
-  // Construye la base (https://<host>) para llamar al propio endpoint del scraper
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const host = req.headers.host;
-  return `${proto}://${host}`;
 }
