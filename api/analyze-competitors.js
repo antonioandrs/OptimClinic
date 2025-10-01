@@ -225,20 +225,20 @@ function getFallbackAnalysis(competitors, contexto) {
     });
   }
 
-  const precioMin = preciosMin.length > 0 ? Math.min(...preciosMin) : 70;
-  const precioMax = preciosMax.length > 0 ? Math.max(...preciosMax) : 140;
-  const precioPromedio = preciosMin.length > 0 
-    ? Math.round((precioMin + precioMax) / 2) 
-    : 95;
+  const precioMin = preciosMin.length > 0 ? Math.min(...preciosMin) : null;
+const precioMax = preciosMax.length > 0 ? Math.max(...preciosMax) : null;
+const precioPromedio = preciosMin.length > 0 
+  ? Math.round((precioMin + precioMax) / 2) 
+  : null;
 
-  return {
-    resumenEjecutivo: `Análisis de ${numCompetidores} competidores en ${contexto.provincia || 'la zona'}. Mercado con competencia moderada y oportunidades de diferenciación en servicios digitales y experiencia de paciente.`,
-    rangoPrecios: {
-      minimo: precioMin,
-      maximo: precioMax,
-      promedio: precioPromedio,
-      posicionamiento: 'Los competidores se posicionan en rango medio con margen para premium'
-    },
+return {
+  resumenEjecutivo: `Análisis de ${numCompetidores} competidores en ${contexto.provincia || 'la zona'}. Mercado con competencia moderada y oportunidades de diferenciación.`,
+  rangoPrecios: precioPromedio ? {
+    minimo: precioMin,
+    maximo: precioMax,
+    promedio: precioPromedio,
+    posicionamiento: 'Datos basados en información proporcionada'
+  } : null,
     serviciosComunes: Array.from(serviciosUnicos).slice(0, 6),
     presenciaDigital: {
       nivel: 'medio',
