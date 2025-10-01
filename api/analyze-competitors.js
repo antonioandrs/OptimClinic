@@ -102,16 +102,35 @@ module.exports = async (req, res) => {
 };
 
 function buildAnalysisPrompt(competitors, contexto) {
-  const competitorsData = competitors.map((c, i) => `
+  const competitorsData = competitors.map((c, i) => {
+    let preciosTexto = 'No visibles';
+    if (c.preciosVisibles) {
+      const parts = [];
+      if (c.preciosVisibles.consultas) {
+        parts.push(`Consultas: €${c.preciosVisibles.consultas.min}-${c.preciosVisibles.consultas.max}`);
+      }
+      if (c.preciosVisibles.cirugias) {
+        parts.push(`Cirugías: €${c.preciosVisibles.cirugias.min}-${c.preciosVisibles.cirugias.max}`);
+      }
+      preciosTexto = parts.join(' | ');
+    }
+    
+    return `
 COMPETIDOR ${i + 1}: ${c.url}
 - Título: ${c.titulo || 'N/A'}
 - Descripción: ${c.descripcion || 'N/A'}
-- Servicios detectados: ${c.servicios?.join(', ') || 'No detectados'}
-- Precios visibles: ${c.preciosVisibles ? `€${c.preciosVisibles.min}-${c.preciosVisibles.max} (promedio €${c.preciosVisibles.promedio})` : 'No visibles'}
-- Contacto: ${c.telefono || 'No'} / Email: ${c.email || 'No'}
-- Redes sociales: ${c.redesSociales?.join(', ') || 'Ninguna detectada'}
-- Tecnologías: ${c.tecnologias?.join(', ') || 'No detectadas'}
-  `).join('\n');
+- Servicios detectados (${c.servicios?.length || 0}): ${c.servicios?.join(', ') || 'No detectados'}
+- Precios visibles: ${preciosTexto}
+- Contacto: Tel ${c.contacto?.telefono || 'No'} / Email ${c.contacto?.email || 'No'}
+- Redes sociales: ${c.redesSociales?.join(', ') || 'Ninguna'}
+- Estructura: ${c.estructura?.secciones || 0} secciones, ${c.estructura?.enlaces || 0} enlaces
+- Contenido analizado: ${c.contenidoCompleto?.length || 0} caracteres
+
+EXTRACTO DE CONTENIDO:
+${c.contenidoCompleto?.substring(0, 2000) || 'No disponible'}
+...
+  `;
+  }).join('\n');
 
   return `Analiza estos ${competitors.length} competidores de una clínica médica en ${contexto.provincia || 'España'}:
 
@@ -159,9 +178,12 @@ DEVUELVE JSON CON ESTA ESTRUCTURA EXACTA:
 }
 
 IMPORTANTE: 
-- Sé específico y accionable
-- Identifica gaps reales del mercado
-- Prioriza oportunidades por impacto
+- Analiza el CONTENIDO COMPLETO proporcionado, no solo metadatos
+- Si detectas servicios en el contenido, úsalos aunque no estén en la lista de "servicios detectados"
+- Sé específico con precios: diferencia entre consultas y cirugías
+- Identifica gaps REALES basándote en el contenido completo
+- Si algo no está claro en el contenido, dilo explícitamente
+- Prioriza insights basados en datos concretos del contenido
 - Devuelve SOLO el JSON, sin texto adicional`;
 }
 
@@ -175,8 +197,18 @@ function getFallbackAnalysis(competitors, contexto) {
     c.servicios?.forEach(s => serviciosUnicos.add(s));
     c.redesSociales?.forEach(r => redesUnicos.add(r));
     if (c.preciosVisibles) {
-      preciosMin.push(c.preciosVisibles.min);
-      preciosMax.push(c.preciosVisibles.max);
+      if (c.preciosVisibles.consultas) {
+        preciosMin.push(c.preciosVisibles.consultas.min);
+        preciosMax.push(c.preciosVisibles.consultas.max);
+      }
+      if (c.preciosVisibles.todos) {
+        c.preciosVisibles.todos.forEach(p => {
+          if (p <= 500) {
+            preciosMin.push(p);
+            preciosMax.push(p);
+          }
+        });
+      }
     }
   });
 
