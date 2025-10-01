@@ -146,9 +146,18 @@ DEVUELVE JSON CON ESTA ESTRUCTURA EXACTA:
 {
   "resumenEjecutivo": "Resumen de 2-3 líneas sobre el panorama competitivo",
   "rangoPrecios": {
-    "minimo": 60,
-    "maximo": 150,
-    "promedio": 95,
+    "consultas": {
+      "minimo": 60,
+      "maximo": 150,
+      "promedio": 95,
+      "nota": "Precios de consulta o si no hay datos de consultas específicos"
+    },
+    "tratamientos": {
+      "minimo": 500,
+      "maximo": 8000,
+      "promedio": 3500,
+      "nota": "Solo si hay cirugías/tratamientos mayores detectados, sino omitir"
+    },
     "posicionamiento": "Los competidores se posicionan en rango medio-alto"
   },
   "serviciosComunes": ["Servicio 1", "Servicio 2", "Servicio 3"],

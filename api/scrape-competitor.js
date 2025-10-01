@@ -57,7 +57,7 @@ module.exports = async (req, res) => {
       url: cleanUrl,
       titulo: jinaData.data?.title || extractTitleFromMarkdown(markdown),
       descripcion: jinaData.data?.description || extractFirstParagraph(markdown),
-      contenidoCompleto: markdown.substring(0, 8000), // Primeros 8k chars para IA
+      contenidoCompleto: markdown.substring(0, 15000), // Primeros 15k chars para mejor cobertura
       servicios: extractServices(markdown),
       preciosVisibles: extractPrices(markdown),
       contacto: {
