@@ -1343,7 +1343,8 @@ function renderCompetitors() {
           <div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
             <strong>${c.data.titulo || ''}</strong><br>
             ${c.data.servicios?.length ? 'Servicios: ' + c.data.servicios.slice(0, 4).join(', ') : ''}
-            ${c.data.preciosVisibles ? \` | Precios: €\${c.data.preciosVisibles.min}-\${c.data.preciosVisibles.max}\` : ''}
+            ${c.data.preciosVisibles ? ` | Precios: €${c.data.preciosVisibles.min}-${c.data.preciosVisibles.max}` : ''}
+
           </div>
         ` : ''}
       </div>
