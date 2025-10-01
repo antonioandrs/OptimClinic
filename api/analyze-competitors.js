@@ -142,7 +142,7 @@ ${doctoraliaInfo}
 EXTRACTO DE CONTENIDO WEB:
 ${c.contenidoCompleto?.substring(0, 2000) || 'No disponible'}
 ...
-  `;
+    `;
   }).join('\n');
   }).join('\n');
 
