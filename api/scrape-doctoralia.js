@@ -18,8 +18,7 @@ module.exports = async (req, res) => {
     // Construir URL según especialidad
     let url;
     const provinciaLower = provincia.toLowerCase()
-      .replace('á', 'a').replace('é', 'e').replace('í', 'i')
-      .replace('ó', 'o').replace('ú', 'u');
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // Elimina acentos correctamente
     
     if (especialidad) {
       const especialidadesMap = {
@@ -59,6 +58,8 @@ module.exports = async (req, res) => {
     }
 
     const html = await response.text();
+    
+    // REGEX CORREGIDO: busca el símbolo € real, no corrupto
     const preciosMatch = html.match(/(\d+)\s*€/g);
     
     if (!preciosMatch || preciosMatch.length === 0) {

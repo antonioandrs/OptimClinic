@@ -1561,9 +1561,12 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
     
     if (!res.ok) throw new Error(data.error || 'Error en scraping');
     
-    console.log('DATOS ACTUALIZADOS PARA ' + provincia + (especialidad ? ` (${especialidad})` : '') + ':');
+    // Mostrar datos temporalmente en la interfaz
+    mostrarDatosTemporales(data);
+    
+    // Log para copiar al código si quieres
     console.log('=====================================');
-    console.log('Copia este codigo en datosProvincia:');
+    console.log('DATOS PARA ' + provincia + ' - ' + (data.especialidad || 'general').toUpperCase());
     console.log('=====================================');
     console.log("'" + provincia + "': {");
     console.log('  consulta: ' + data.codigoActualizar.consulta + ',');
@@ -1571,10 +1574,16 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
     console.log('  crecimiento: ' + data.codigoActualizar.crecimiento + ',');
     console.log('  dso: ' + data.codigoActualizar.dso);
     console.log('},');
+    console.log('URL usada: ' + data.urlUsada);
+    console.log('Muestras: ' + data.muestras);
     console.log('=====================================');
-    console.log('Detalles:', data);
     
-    alert('Scraping exitoso!\n\nEspecialidad: ' + (data.especialidad || 'general') + '\nMuestras: ' + data.muestras + '\nRango: ' + data.consulta);
+    alert('Scraping exitoso!\n\n' + 
+          'Provincia: ' + provincia + '\n' +
+          'Especialidad: ' + (data.especialidad || 'general') + '\n' +
+          'Muestras: ' + data.muestras + '\n' +
+          'Rango: ' + data.consulta + '\n\n' +
+          'Datos actualizados en la interfaz temporalmente');
     
   } catch (error) {
     console.error('Error:', error);
@@ -1584,6 +1593,39 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
     btn.textContent = 'Admin: Actualizar Precios';
   }
 });
+
+// NUEVA FUNCIÓN: Mostrar datos scrapeados temporalmente
+function mostrarDatosTemporales(data) {
+  // Actualizar KPIs con datos scrapeados
+  getEl('rangoConsulta').textContent = data.consulta;
+  getEl('mixPrivado').textContent = data.mixPrivado;
+  getEl('crecimientoSector').textContent = data.crecimiento;
+  getEl('dsoPromedio').textContent = data.dso;
+  getEl('provinciaActual').textContent = data.provincia + ' - ' + (data.especialidad || 'general');
+  
+  // Crear/actualizar banner de datos temporales
+  let banner = document.getElementById('bannerDatosTemp');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'bannerDatosTemp';
+    banner.style = 'background:#fef3c7; padding:1rem; border-radius:8px; margin:1rem 0; border:2px solid #f59e0b';
+    
+    // Insertar antes de la sección de Inteligencia de Mercado
+    const marketSection = document.querySelector('#market-tab .card-body > div');
+    if (marketSection) {
+      marketSection.insertAdjacentElement('beforebegin', banner);
+    }
+  }
+  
+  banner.innerHTML = `
+    <strong>Datos actualizados para esta sesión:</strong><br>
+    ${data.provincia} - <strong>${data.especialidad || 'general'}</strong><br>
+    Rango: ${data.consulta} (${data.muestras} muestras)<br>
+    Mix privado: ${data.mixPrivado} | Crecimiento: ${data.crecimiento} | DSO: ${data.dso}<br>
+    <small style="color:#92400e">Estos datos son temporales y no modifican la configuración base. Válidos solo para esta sesión de trabajo con el cliente.</small>
+    <button onclick="this.parentElement.remove()" style="float:right; margin-top:-1.5rem; background:transparent; border:none; cursor:pointer; font-size:1.2rem">×</button>
+  `;
+}
 
 // Mostrar selector de especialidad cuando se activa modo admin
 (function initAdminScraper() {
@@ -1598,6 +1640,12 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
         adminClicks = 0;
       }
       setTimeout(() => { adminClicks = 0; }, 2000);
+    }
+  });
+})();
+  </script>
+</body>
+</html>  setTimeout(() => { adminClicks = 0; }, 2000);
     }
   });
 })();
