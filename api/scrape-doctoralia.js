@@ -13,37 +13,31 @@ module.exports = async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    console.log(`Scraping Doctoralia: ${provincia} - ${especialidad || 'General'}`);
+    console.log(`Scraping: ${provincia} - ${especialidad || 'General'}`);
     
-    // URLs con especialidad
-    const urlsBase = {
-      'Madrid': 'https://www.doctoralia.es/clinicas/madrid',
-      'Barcelona': 'https://www.doctoralia.es/clinicas/barcelona',
-      'Valencia': 'https://www.doctoralia.es/clinicas/valencia',
-      'Alicante': 'https://www.doctoralia.es/clinicas/alicante',
-      'Sevilla': 'https://www.doctoralia.es/clinicas/sevilla',
-      'Málaga': 'https://www.doctoralia.es/clinicas/malaga'
-    };
-
-    let url = urlsBase[provincia];
-    if (!url) {
-      return res.status(400).json({ error: `Provincia no soportada: ${provincia}` });
-    }
-
-    // Añadir especialidad a URL si se especifica
+    // Construir URL según especialidad
+    let url;
+    const provinciaLower = provincia.toLowerCase()
+      .replace('á', 'a').replace('é', 'e').replace('í', 'i')
+      .replace('ó', 'o').replace('ú', 'u');
+    
     if (especialidad) {
       const especialidadesMap = {
-        'traumatologia': 'traumatologia-y-ortopedia',
-        'fisioterapia': 'fisioterapia',
-        'medicina-general': 'medicina-general',
-        'dermatologia': 'dermatologia',
-        'ginecologia': 'ginecologia-y-obstetricia',
-        'pediatria': 'pediatria',
-        'psicologia': 'psicologia'
+        'traumatologia': 'traumatologo',
+        'fisioterapia': 'fisioterapeuta',
+        'dermatologia': 'dermatologo',
+        'ginecologia': 'ginecologo',
+        'pediatria': 'pediatra',
+        'psicologia': 'psicologo'
       };
-      const especialidadUrl = especialidadesMap[especialidad.toLowerCase()] || especialidad;
-      url = `https://www.doctoralia.es/${especialidadUrl}/${provincia.toLowerCase()}`;
+      
+      const especialidadUrl = especialidadesMap[especialidad] || especialidad;
+      url = `https://www.doctoralia.es/${especialidadUrl}/${provinciaLower}`;
+    } else {
+      url = `https://www.doctoralia.es/clinicas/${provinciaLower}`;
     }
+
+    console.log('URL intentada:', url);
 
     const response = await fetch(url, {
       headers: {
@@ -54,7 +48,14 @@ module.exports = async (req, res) => {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} from Doctoralia`);
+      return res.json({
+        provincia,
+        especialidad: especialidad || 'general',
+        error: `HTTP ${response.status} - URL no válida`,
+        urlIntentada: url,
+        sugerencia: 'Verifica la URL manualmente en Doctoralia',
+        timestamp: new Date().toISOString()
+      });
     }
 
     const html = await response.text();
@@ -64,8 +65,8 @@ module.exports = async (req, res) => {
       return res.json({
         provincia,
         especialidad: especialidad || 'general',
-        error: 'No se encontraron precios',
-        metodo: 'manual_update_needed',
+        error: 'No se encontraron precios en la página',
+        urlIntentada: url,
         timestamp: new Date().toISOString()
       });
     }
@@ -78,8 +79,7 @@ module.exports = async (req, res) => {
       return res.json({
         provincia,
         especialidad: especialidad || 'general',
-        error: 'Precios fuera de rango',
-        metodo: 'manual_update_needed',
+        error: 'Precios fuera de rango (30-300€)',
         timestamp: new Date().toISOString()
       });
     }
@@ -95,7 +95,8 @@ module.exports = async (req, res) => {
       consulta: `€${min}-${max}`,
       precioMedio: `€${media}`,
       muestras: precios.length,
-      metodologia: `Doctoralia ${especialidad ? especialidad : 'general'} - P25-P75`,
+      urlUsada: url,
+      metodologia: `Doctoralia ${especialidad || 'general'} - Percentiles 25-75`,
       timestamp: new Date().toISOString(),
       mixPrivado: estimarMixPrivado(provincia),
       crecimiento: '11%',
@@ -108,6 +109,7 @@ module.exports = async (req, res) => {
       }
     };
 
+    console.log('Scraping exitoso:', resultado);
     return res.status(200).json(resultado);
 
   } catch (error) {
