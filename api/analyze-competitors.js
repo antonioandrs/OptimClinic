@@ -83,7 +83,6 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Validar schema mínimo
     if (!analysis.resumenEjecutivo || !analysis.oportunidades) {
       console.warn('Incomplete analysis schema');
       analysis = { ...getFallbackAnalysis(competitors, contexto), ...analysis };
@@ -119,32 +118,30 @@ function buildAnalysisPrompt(competitors, contexto) {
     }
 
     let doctoraliaInfo = '';
-    if (c.doctoralia?.found) {
+    if (c.doctoralia && c.doctoralia.found) {
       doctoraliaInfo = `
 DATOS DOCTORALIA:
 - Perfil encontrado: ${c.doctoralia.url || 'Sí'}
 - Valoración: ${c.doctoralia.rating ? c.doctoralia.rating + '★' : 'No disponible'}
 - Opiniones: ${c.doctoralia.reviews || 'No disponible'}
-- Especialidades verificadas: ${c.doctoralia.especialidades?.join(', ') || 'N/A'}`;
+- Especialidades verificadas: ${c.doctoralia.especialidades ? c.doctoralia.especialidades.join(', ') : 'N/A'}`;
     }
     
     return `
 COMPETIDOR ${i + 1}: ${c.url}
 - Título: ${c.titulo || 'N/A'}
 - Descripción: ${c.descripcion || 'N/A'}
-- Servicios detectados (${c.servicios?.length || 0}): ${c.servicios?.join(', ') || 'No detectados'}
+- Servicios detectados (${c.servicios ? c.servicios.length : 0}): ${c.servicios ? c.servicios.join(', ') : 'No detectados'}
 - Precios: ${preciosTexto}
-- Contacto: Tel ${c.contacto?.telefono || 'No'} / Email ${c.contacto?.email || 'No'}
-- Redes sociales: ${c.redesSociales?.join(', ') || 'Ninguna'}
-- Estructura web: ${c.estructura?.secciones || 0} secciones, ${c.estructura?.enlaces || 0} enlaces
+- Contacto: Tel ${c.contacto && c.contacto.telefono ? c.contacto.telefono : 'No'} / Email ${c.contacto && c.contacto.email ? c.contacto.email : 'No'}
+- Redes sociales: ${c.redesSociales ? c.redesSociales.join(', ') : 'Ninguna'}
+- Estructura web: ${c.estructura ? c.estructura.secciones : 0} secciones, ${c.estructura ? c.estructura.enlaces : 0} enlaces
 ${doctoraliaInfo}
 
 EXTRACTO DE CONTENIDO WEB:
-${c.contenidoCompleto?.substring(0, 2000) || 'No disponible'}
-...
-    `;
-  }).join('\n');
-  }).join('\n');
+${c.contenidoCompleto ? c.contenidoCompleto.substring(0, 2000) : 'No disponible'}
+...`;
+  }).join('\n\n');
 
   return `Analiza estos ${competitors.length} competidores de una clínica médica en ${contexto.provincia || 'España'}:
 
@@ -160,18 +157,9 @@ DEVUELVE JSON CON ESTA ESTRUCTURA EXACTA:
 {
   "resumenEjecutivo": "Resumen de 2-3 líneas sobre el panorama competitivo",
   "rangoPrecios": {
-    "consultas": {
-      "minimo": 60,
-      "maximo": 150,
-      "promedio": 95,
-      "nota": "Precios de consulta o si no hay datos de consultas específicos"
-    },
-    "tratamientos": {
-      "minimo": 500,
-      "maximo": 8000,
-      "promedio": 3500,
-      "nota": "Solo si hay cirugías/tratamientos mayores detectados, sino omitir"
-    },
+    "minimo": 60,
+    "maximo": 150,
+    "promedio": 95,
     "posicionamiento": "Los competidores se posicionan en rango medio-alto"
   },
   "serviciosComunes": ["Servicio 1", "Servicio 2", "Servicio 3"],
@@ -202,8 +190,8 @@ DEVUELVE JSON CON ESTA ESTRUCTURA EXACTA:
 
 IMPORTANTE: 
 - Analiza el CONTENIDO COMPLETO proporcionado, no solo metadatos
-- Si detectas servicios en el contenido, úsalos aunque no estén en la lista de "servicios detectados"
-- Sé específico con precios: diferencia entre consultas y cirugías
+- Si hay datos de Doctoralia con valoraciones, úsalos para evaluar reputación
+- Diferencia entre precios de consultas y tratamientos mayores
 - Identifica gaps REALES basándote en el contenido completo
 - Si algo no está claro en el contenido, dilo explícitamente
 - Prioriza insights basados en datos concretos del contenido
@@ -211,29 +199,31 @@ IMPORTANTE:
 }
 
 function getFallbackAnalysis(competitors, contexto) {
-  const numCompetidores = competitors?.length || 0;
+  const numCompetidores = competitors ? competitors.length : 0;
   const serviciosUnicos = new Set();
   const redesUnicos = new Set();
   let preciosMin = [], preciosMax = [];
   
-  competitors?.forEach(c => {
-    c.servicios?.forEach(s => serviciosUnicos.add(s));
-    c.redesSociales?.forEach(r => redesUnicos.add(r));
-    if (c.preciosVisibles) {
-      if (c.preciosVisibles.consultas) {
-        preciosMin.push(c.preciosVisibles.consultas.min);
-        preciosMax.push(c.preciosVisibles.consultas.max);
+  if (competitors) {
+    competitors.forEach(c => {
+      if (c.servicios) c.servicios.forEach(s => serviciosUnicos.add(s));
+      if (c.redesSociales) c.redesSociales.forEach(r => redesUnicos.add(r));
+      if (c.preciosVisibles) {
+        if (c.preciosVisibles.consultas) {
+          preciosMin.push(c.preciosVisibles.consultas.min);
+          preciosMax.push(c.preciosVisibles.consultas.max);
+        }
+        if (c.preciosVisibles.todos) {
+          c.preciosVisibles.todos.forEach(p => {
+            if (p <= 500) {
+              preciosMin.push(p);
+              preciosMax.push(p);
+            }
+          });
+        }
       }
-      if (c.preciosVisibles.todos) {
-        c.preciosVisibles.todos.forEach(p => {
-          if (p <= 500) {
-            preciosMin.push(p);
-            preciosMax.push(p);
-          }
-        });
-      }
-    }
-  });
+    });
+  }
 
   const precioMin = preciosMin.length > 0 ? Math.min(...preciosMin) : 70;
   const precioMax = preciosMax.length > 0 ? Math.max(...preciosMax) : 140;
@@ -295,7 +285,7 @@ function getFallbackAnalysis(competitors, contexto) {
       'Saturación del mercado en especialidades comunes'
     ],
     kpisComparativos: [
-      { metrica: 'Precio consulta', competidores: `€${precioPromedio}`, recomendado: `€${precioMin}-${precioMax}` },
+      { metrica: 'Precio consulta', competidores: `€${precioPromedio}`, recomendado: `€${precioMin}-€${precioMax}` },
       { metrica: 'Servicios digitales', competidores: 'Bajo', recomendado: 'Alto (telemedicina, app)' },
       { metrica: 'Presencia redes', competidores: 'Media', recomendado: 'Alta (3+ plataformas)' },
       { metrica: 'Tiempo respuesta', competidores: '24-48h', recomendado: '<4h' }
