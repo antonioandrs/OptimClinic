@@ -706,10 +706,15 @@
     function monthLabel(d) { return `${MONTHS_ES[d.getMonth()]}-${d.getFullYear()}`; }
 
     function eur(n) {
-      var ivaSel = document.getElementById('ivaSel');
-      var iva = Number(ivaSel ? ivaSel.value : 0) / 100;
-      return (Number(n || 0) * (1 + iva)).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-    }
+  var ivaSel = document.getElementById('ivaSel');
+  var iva = Number(ivaSel ? ivaSel.value : 0) / 100;
+  var x = Math.round(Number(n || 0) * (1 + iva));   // sin decimales
+  var neg = x < 0 ? '-' : '';
+  var s = Math.abs(x).toString();
+  var grouped = s.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); // fuerza puntos cada 3
+  return `${neg}${grouped} €`; // NBSP antes de €
+}
+
     
     function getEl(id) { return document.getElementById(id); }
     function num(id) { var el = getEl(id); return Number(el && el.value || 0); }
@@ -1468,17 +1473,28 @@ async function analyzeCompetitors() {
 function renderAnalysisResults(analysis) {
   const precios = analysis.rangoPrecios || {};
   const digital = analysis.presenciaDigital || {};
-  
+  const min = Number.isFinite(precios.minimo) ? precios.minimo : 60;
+  const max = Number.isFinite(precios.maximo) ? precios.maximo : 150;
+  const prom = Number.isFinite(precios.promedio) ? precios.promedio : Math.round((min + max) / 2);
+  const posPct = (max > min) ? ((prom - min) / (max - min) * 100) : 50;
+
+  const showDisclaimer = !analysis.rangoPrecios || !Number.isFinite(analysis.rangoPrecios.promedio);
+  const disclaimerHtml = showDisclaimer ? `
+    <div style="background:#fef3c7; padding:1rem; border-radius:8px; margin-bottom:1rem; border:1px solid #f59e0b;">
+      <strong>Nota:</strong> Precios agregados aproximados. Valida páginas de precios/servicios de cada competidor.
+    </div>
+  ` : '';
+
   getEl('executiveSummary').innerHTML = `
+    ${disclaimerHtml}
     <p style="font-size: 1rem; line-height: 1.6;">${analysis.resumenEjecutivo || 'Análisis completado'}</p>
-    
     <div class="kpi-grid" style="margin-top: 1.5rem;">
       <div class="kpi-card">
-        <div class="kpi-value" style="color: #2563eb;">€${precios.promedio || '95'}</div>
+        <div class="kpi-value" style="color: #2563eb;">${eur(prom)}</div>
         <div class="kpi-label">Precio Promedio</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-value" style="color: #2563eb;">${competitorsData.length}</div>
+        <div class="kpi-value" style="color: #2563eb;">${(analysis.competitors || []).length}</div>
         <div class="kpi-label">Competidores Analizados</div>
       </div>
       <div class="kpi-card">
@@ -1486,32 +1502,31 @@ function renderAnalysisResults(analysis) {
         <div class="kpi-label">Nivel Digital</div>
       </div>
     </div>
-    
+
     <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--primary);">Rango de Precios</h4>
     <div style="background: var(--gray-50); padding: 1rem; border-radius: 8px;">
       <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-        <span>Mínimo: <strong>€${precios.minimo || 60}</strong></span>
-        <span>Máximo: <strong>€${precios.maximo || 150}</strong></span>
+        <span>Mínimo: <strong>${eur(min)}</strong></span>
+        <span>Máximo: <strong>${eur(max)}</strong></span>
       </div>
       <div style="height: 8px; background: linear-gradient(90deg, #ef4444 0%, #eab308 50%, #22c55e 100%); border-radius: 4px; position: relative;">
-        <div style="position: absolute; top: -4px; left: ${((precios.promedio - precios.minimo) / (precios.maximo - precios.minimo) * 100)}%; width: 16px; height: 16px; background: #2563eb; border: 2px solid white; border-radius: 50%;"></div>
+        <div style="position: absolute; top: -4px; left: ${Math.max(0, Math.min(100, posPct))}%; width: 16px; height: 16px; background: #2563eb; border: 2px solid white; border-radius: 50%;"></div>
       </div>
-      <p style="margin-top: 0.75rem; font-size: 0.875rem; color: var(--text-muted);">${precios.posicionamiento || ''}</p>
     </div>
-    
+
     <h4 style="margin: 1.5rem 0 0.75rem; font-size: 1rem; color: var(--primary);">Servicios Comunes</h4>
     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
-      ${(analysis.serviciosComunes || []).map(s => 
+      ${(analysis.serviciosTop || analysis.serviciosComunes || []).map(s => 
         `<span style="background: var(--primary); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.875rem;">${s}</span>`
       ).join('')}
     </div>
   `;
-  
+
   getEl('marketAnalysis').innerHTML = `
     <h4 style="margin: 0 0 0.75rem; font-size: 1rem; color: var(--primary);">Presencia Digital</h4>
     <div style="background: var(--gray-50); padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
       <p><strong>Nivel:</strong> ${digital.nivel || 'Medio'}</p>
-      <p style="margin: 0.5rem 0;">${digital.analisis || ''}</p>
+      <p style="margin: 0.5rem 0;">${digital.analisis || 'Sin conclusiones específicas.'}</p>
       ${digital.redesMasUsadas?.length > 0 ? `
         <p style="margin-top: 0.5rem;"><strong>Redes más usadas:</strong> ${digital.redesMasUsadas.join(', ')}</p>
       ` : ''}
