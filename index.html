@@ -486,14 +486,25 @@
       </div>
     </div>
 
-    <!-- Market Intelligence Tab -->
+   <!-- Market Intelligence Tab -->
     <div class="tab-content" id="market-tab">
       <div class="card">
         <div class="card-header">
           <h2 class="card-title">📈 Inteligencia de Mercado</h2>
-	<button id="adminScraperBtn" class="btn btn-secondary" style="font-size:0.8rem; display:none">
-        🔧 Admin: Actualizar Precios
-      </button>
+          <div style="display:flex; gap:0.5rem; align-items:center;">
+            <select id="especialidadScraper" style="padding:.5rem; font-size:0.8rem; display:none">
+              <option value="">General</option>
+              <option value="traumatologia">Traumatología</option>
+              <option value="fisioterapia">Fisioterapia</option>
+              <option value="dermatologia">Dermatología</option>
+              <option value="ginecologia">Ginecología</option>
+              <option value="pediatria">Pediatría</option>
+              <option value="psicologia">Psicología</option>
+            </select>
+            <button id="adminScraperBtn" class="btn btn-secondary" style="font-size:0.8rem; display:none">
+              Admin: Actualizar Precios
+            </button>
+          </div>
         </div>
         <div class="card-body">
           <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid var(--success); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
@@ -1530,28 +1541,27 @@ function capitalize(s){ return (s||'').charAt(0).toUpperCase() + (s||'').slice(1
 
 document.getElementById('adminScraperBtn')?.addEventListener('click', async function() {
   const provincia = document.getElementById('provincia').value;
+  const especialidad = document.getElementById('especialidadScraper').value;
   const password = prompt('Contraseña de admin:');
   
   if (!password) return;
   
   const btn = this;
   btn.disabled = true;
-  btn.textContent = 'Scrapeando...'; // SIN EMOJI
+  btn.textContent = 'Scrapeando...';
   
   try {
     const res = await fetch('/api/scrape-doctoralia', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provincia, adminPassword: password })
+      body: JSON.stringify({ provincia, especialidad, adminPassword: password })
     });
     
     const data = await res.json();
     
-    if (!res.ok) {
-      throw new Error(data.error || 'Error en scraping');
-    }
+    if (!res.ok) throw new Error(data.error || 'Error en scraping');
     
-    console.log('DATOS ACTUALIZADOS PARA ' + provincia + ':');
+    console.log('DATOS ACTUALIZADOS PARA ' + provincia + (especialidad ? ` (${especialidad})` : '') + ':');
     console.log('=====================================');
     console.log('Copia este codigo en datosProvincia:');
     console.log('=====================================');
@@ -1564,16 +1574,33 @@ document.getElementById('adminScraperBtn')?.addEventListener('click', async func
     console.log('=====================================');
     console.log('Detalles:', data);
     
-    alert('Scraping exitoso!\n\nMira la consola y copia el codigo actualizado.\n\nMuestras: ' + data.muestras + '\nRango: ' + data.consulta);
+    alert('Scraping exitoso!\n\nEspecialidad: ' + (data.especialidad || 'general') + '\nMuestras: ' + data.muestras + '\nRango: ' + data.consulta);
     
   } catch (error) {
     console.error('Error:', error);
     alert('Error: ' + error.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Admin: Actualizar Precios'; // SIN EMOJI
+    btn.textContent = 'Admin: Actualizar Precios';
   }
 });
+
+// Mostrar selector de especialidad cuando se activa modo admin
+(function initAdminScraper() {
+  let adminClicks = 0;
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+      adminClicks++;
+      if (adminClicks >= 3) {
+        document.getElementById('adminScraperBtn').style.display = 'block';
+        document.getElementById('especialidadScraper').style.display = 'block';
+        console.log('Modo admin activado');
+        adminClicks = 0;
+      }
+      setTimeout(() => { adminClicks = 0; }, 2000);
+    }
+  });
+})();
   </script>
 </body>
 </html>
