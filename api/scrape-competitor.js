@@ -13,32 +13,31 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'URL requerida' });
     }
 
-    // Validar y limpiar URL
     let cleanUrl = url.trim();
     if (!cleanUrl.startsWith('http')) {
       cleanUrl = 'https://' + cleanUrl;
     }
 
-    console.log('Analizando con Jina AI:', cleanUrl);
+    console.log('Analizando competidor:', cleanUrl);
 
-    // Usar Jina AI Reader para obtener contenido completo
+    // === FASE 1: Scraping web propia con Jina AI ===
     const jinaUrl = `https://r.jina.ai/${cleanUrl}`;
-    const response = await fetch(jinaUrl, {
+    const jinaResponse = await fetch(jinaUrl, {
       headers: {
         'Accept': 'application/json',
         'X-Return-Format': 'markdown'
       }
     });
 
-    if (!response.ok) {
+    if (!jinaResponse.ok) {
       return res.json({
         url: cleanUrl,
-        error: `Error ${response.status} al acceder a la web`,
+        error: `Error ${jinaResponse.status} al acceder a la web`,
         status: 'error'
       });
     }
 
-    const jinaData = await response.json();
+    const jinaData = await jinaResponse.json();
     const markdown = jinaData.data?.content || '';
     const htmlContent = jinaData.data?.html || '';
 
@@ -50,34 +49,50 @@ module.exports = async (req, res) => {
       });
     }
 
-    console.log(`Contenido extraído: ${markdown.length} caracteres`);
+    console.log(`Web propia: ${markdown.length} caracteres`);
 
-    // Extraer datos estructurados del markdown
-    const data = {
+    // Extraer datos de la web propia
+    const nombreClinica = extractClinicName(cleanUrl, jinaData.data?.title || '');
+    const ciudad = extractCity(markdown, cleanUrl);
+
+    const datosWebPropia = {
       url: cleanUrl,
       titulo: jinaData.data?.title || extractTitleFromMarkdown(markdown),
       descripcion: jinaData.data?.description || extractFirstParagraph(markdown),
-      contenidoCompleto: markdown.substring(0, 15000), // Primeros 15k chars para mejor cobertura
+      contenidoCompleto: markdown.substring(0, 15000),
       servicios: extractServices(markdown),
-      preciosVisibles: extractPrices(markdown),
       contacto: {
         telefono: extractPhone(markdown),
         email: extractEmail(markdown)
       },
       redesSociales: extractSocialMedia(markdown + ' ' + htmlContent),
       palabrasClave: extractKeywords(markdown),
-      estructura: analyzeStructure(markdown),
+      estructura: analyzeStructure(markdown)
+    };
+
+    // === FASE 2: Buscar en Doctoralia ===
+    console.log(`Buscando en Doctoralia: ${nombreClinica} ${ciudad}`);
+    const doctoraliaData = await scrapeDoctoraliaProfile(nombreClinica, ciudad);
+
+    // === FASE 3: Combinar datos ===
+    const resultado = {
+      ...datosWebPropia,
+      doctoralia: doctoraliaData,
+      preciosVisibles: doctoraliaData.precios || null,
+      valoracion: doctoraliaData.rating,
+      opiniones: doctoraliaData.reviews,
       status: 'success',
       timestamp: new Date().toISOString()
     };
 
     console.log('Análisis completado:', {
-      servicios: data.servicios.length,
-      precios: data.preciosVisibles ? 'Sí' : 'No',
-      caracteres: markdown.length
+      servicios: resultado.servicios.length,
+      precios: resultado.preciosVisibles ? 'Sí' : 'No',
+      valoracion: resultado.valoracion || 'N/A',
+      opiniones: resultado.opiniones || 0
     });
 
-    return res.status(200).json(data);
+    return res.status(200).json(resultado);
 
   } catch (error) {
     console.error('Error en análisis:', error);
@@ -89,7 +104,195 @@ module.exports = async (req, res) => {
   }
 };
 
-// Funciones de extracción
+// === NUEVA FUNCIÓN: Scraping de Doctoralia ===
+async function scrapeDoctoraliaProfile(nombreClinica, ciudad) {
+  try {
+    // Construir búsqueda en Doctoralia
+    const searchQuery = `${nombreClinica} ${ciudad}`.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '+');
+    
+    const searchUrl = `https://www.doctoralia.es/buscar?q=${searchQuery}`;
+    
+    console.log('Buscando en:', searchUrl);
+    
+    const searchResponse = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      }
+    });
+
+    if (!searchResponse.ok) {
+      console.log('No se pudo buscar en Doctoralia');
+      return { found: false };
+    }
+
+    const searchHtml = await searchResponse.text();
+    
+    // Buscar URL del perfil en los resultados
+    const profileMatch = searchHtml.match(/href="(\/clinica\/[^"]+)"/i) || 
+                         searchHtml.match(/href="(\/[^"]+\/[^"]*clinica[^"]+)"/i);
+    
+    if (!profileMatch) {
+      console.log('No se encontró perfil en Doctoralia');
+      return { found: false };
+    }
+
+    const profilePath = profileMatch[1];
+    const profileUrl = `https://www.doctoralia.es${profilePath}`;
+    
+    console.log('Perfil encontrado:', profileUrl);
+
+    // Scrapear perfil
+    const profileResponse = await fetch(profileUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      }
+    });
+
+    if (!profileResponse.ok) {
+      return { found: false };
+    }
+
+    const profileHtml = await profileResponse.text();
+
+    // Extraer datos del perfil
+    return {
+      found: true,
+      url: profileUrl,
+      rating: extractRating(profileHtml),
+      reviews: extractReviewCount(profileHtml),
+      especialidades: extractEspecialidadesDoctoralia(profileHtml),
+      precios: extractPreciosDoctoralia(profileHtml)
+    };
+
+  } catch (error) {
+    console.error('Error scrapeando Doctoralia:', error);
+    return { found: false, error: error.message };
+  }
+}
+
+function extractRating(html) {
+  const match = html.match(/rating["\s:]+([0-9.]+)/i) || 
+                html.match(/(\d\.\d)\s*de\s*5/i) ||
+                html.match(/data-rating="([0-9.]+)"/i);
+  return match ? parseFloat(match[1]) : null;
+}
+
+function extractReviewCount(html) {
+  const match = html.match(/(\d+)\s*opiniones?/i) ||
+                html.match(/(\d+)\s*reviews?/i) ||
+                html.match(/reviews["\s:]+(\d+)/i);
+  return match ? parseInt(match[1]) : null;
+}
+
+function extractEspecialidadesDoctoralia(html) {
+  const especialidades = new Set();
+  const patterns = [
+    /especialidad[^>]*>([^<]+)</gi,
+    /specialty[^>]*>([^<]+)</gi
+  ];
+  
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const esp = match[1].trim().toLowerCase();
+      if (esp.length > 3 && esp.length < 50) {
+        especialidades.add(esp);
+      }
+    }
+  });
+  
+  return Array.from(especialidades).slice(0, 10);
+}
+
+function extractPreciosDoctoralia(html) {
+  const precios = [];
+  
+  // Buscar precios en formato "Tratamiento: €XXX" o "€XXX - €YYY"
+  const patterns = [
+    /(\d{1,5})\s*€/g,
+    /€\s*(\d{1,5})/g,
+    /desde\s+(\d{1,5})\s*€/gi
+  ];
+  
+  const preciosEncontrados = [];
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const precio = parseInt(match[1]);
+      if (precio >= 30 && precio <= 50000) {
+        preciosEncontrados.push(precio);
+      }
+    }
+  });
+  
+  if (preciosEncontrados.length === 0) return null;
+  
+  const sorted = [...new Set(preciosEncontrados)].sort((a, b) => a - b);
+  
+  // Separar consultas de tratamientos mayores
+  const consultaMax = 500;
+  const preciosConsulta = sorted.filter(p => p <= consultaMax);
+  const preciosTratamientos = sorted.filter(p => p > consultaMax);
+  
+  const result = {};
+  
+  if (preciosConsulta.length > 0) {
+    result.consultas = {
+      min: preciosConsulta[0],
+      max: preciosConsulta[preciosConsulta.length - 1],
+      promedio: Math.round(preciosConsulta.reduce((a, b) => a + b, 0) / preciosConsulta.length)
+    };
+  }
+  
+  if (preciosTratamientos.length > 0) {
+    result.tratamientos = {
+      min: preciosTratamientos[0],
+      max: preciosTratamientos[preciosTratamientos.length - 1],
+      promedio: Math.round(preciosTratamientos.reduce((a, b) => a + b, 0) / preciosTratamientos.length)
+    };
+  }
+  
+  result.muestras = sorted.length;
+  result.todos = sorted;
+  result.fuente = 'Doctoralia';
+  
+  return result;
+}
+
+// Funciones auxiliares
+function extractClinicName(url, title) {
+  // Extraer nombre del dominio o título
+  const domainMatch = url.match(/(?:https?:\/\/)?(?:www\.)?([^.\/]+)/);
+  const domainName = domainMatch ? domainMatch[1] : '';
+  
+  // Limpiar nombre del título si existe
+  if (title && title.length < 100) {
+    return title.split(/[|-]/)[0].trim();
+  }
+  
+  return domainName;
+}
+
+function extractCity(markdown, url) {
+  const ciudades = [
+    'madrid', 'barcelona', 'valencia', 'sevilla', 'zaragoza',
+    'málaga', 'murcia', 'alicante', 'bilbao', 'granada',
+    'córdoba', 'valladolid', 'mallorca', 'vigo', 'gijón'
+  ];
+  
+  const textLower = (markdown + ' ' + url).toLowerCase();
+  
+  for (const ciudad of ciudades) {
+    if (textLower.includes(ciudad)) {
+      return ciudad;
+    }
+  }
+  
+  return 'españa';
+}
+
 function extractTitleFromMarkdown(markdown) {
   const match = markdown.match(/^#\s+(.+)$/m);
   return match ? match[1].trim() : 'Sin título';
@@ -122,60 +325,7 @@ function extractServices(markdown) {
     }
   });
   
-  return Array.from(servicios).slice(0, 15);
-}
-
-function extractPrices(markdown) {
-  const precios = [];
-  const patterns = [
-    /(\d{1,3}(?:[.,]\d{3})*)\s*€/g,
-    /€\s*(\d{1,3}(?:[.,]\d{3})*)/g,
-    /desde\s+(\d{1,3}(?:[.,]\d{3})*)\s*€/gi,
-    /(\d{1,3}(?:[.,]\d{3})*)\s*euros?/gi
-  ];
-  
-  patterns.forEach(pattern => {
-    let match;
-    while ((match = pattern.exec(markdown)) !== null) {
-      const precioStr = match[1].replace(/[.,]/g, '');
-      const precio = parseInt(precioStr);
-      if (precio >= 30 && precio <= 50000) {
-        precios.push(precio);
-      }
-    }
-  });
-  
-  if (precios.length === 0) return null;
-  
-  const sorted = [...new Set(precios)].sort((a, b) => a - b);
-  
-  // Si hay precios muy altos (cirugías), separarlos de consultas
-  const consultaMax = 500;
-  const preciosConsulta = sorted.filter(p => p <= consultaMax);
-  const preciosCirugia = sorted.filter(p => p > consultaMax);
-  
-  const result = {};
-  
-  if (preciosConsulta.length > 0) {
-    result.consultas = {
-      min: preciosConsulta[0],
-      max: preciosConsulta[preciosConsulta.length - 1],
-      promedio: Math.round(preciosConsulta.reduce((a, b) => a + b, 0) / preciosConsulta.length)
-    };
-  }
-  
-  if (preciosCirugia.length > 0) {
-    result.cirugias = {
-      min: preciosCirugia[0],
-      max: preciosCirugia[preciosCirugia.length - 1],
-      promedio: Math.round(preciosCirugia.reduce((a, b) => a + b, 0) / preciosCirugia.length)
-    };
-  }
-  
-  result.muestras = sorted.length;
-  result.todos = sorted;
-  
-  return result;
+  return [...new Set(Array.from(servicios))].slice(0, 15);
 }
 
 function extractPhone(markdown) {
@@ -218,7 +368,7 @@ function extractSocialMedia(content) {
 
 function extractKeywords(markdown) {
   const words = markdown.toLowerCase()
-    .replace(/[^a-zá-úñ\s]/g, ' ')
+    .replace(/[^a-záéíóúñ\s]/g, ' ')
     .split(/\s+/)
     .filter(w => w.length > 4);
   

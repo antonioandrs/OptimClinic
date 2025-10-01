@@ -107,12 +107,25 @@ function buildAnalysisPrompt(competitors, contexto) {
     if (c.preciosVisibles) {
       const parts = [];
       if (c.preciosVisibles.consultas) {
-        parts.push(`Consultas: €${c.preciosVisibles.consultas.min}-${c.preciosVisibles.consultas.max}`);
+        parts.push(`Consultas: €${c.preciosVisibles.consultas.min}-${c.preciosVisibles.consultas.max} (promedio €${c.preciosVisibles.consultas.promedio})`);
       }
-      if (c.preciosVisibles.cirugias) {
-        parts.push(`Cirugías: €${c.preciosVisibles.cirugias.min}-${c.preciosVisibles.cirugias.max}`);
+      if (c.preciosVisibles.tratamientos) {
+        parts.push(`Tratamientos/Cirugías: €${c.preciosVisibles.tratamientos.min}-${c.preciosVisibles.tratamientos.max}`);
+      }
+      if (c.preciosVisibles.fuente) {
+        parts.push(`Fuente: ${c.preciosVisibles.fuente}`);
       }
       preciosTexto = parts.join(' | ');
+    }
+
+    let doctoraliaInfo = '';
+    if (c.doctoralia?.found) {
+      doctoraliaInfo = `
+DATOS DOCTORALIA:
+- Perfil encontrado: ${c.doctoralia.url || 'Sí'}
+- Valoración: ${c.doctoralia.rating ? c.doctoralia.rating + '★' : 'No disponible'}
+- Opiniones: ${c.doctoralia.reviews || 'No disponible'}
+- Especialidades verificadas: ${c.doctoralia.especialidades?.join(', ') || 'N/A'}`;
     }
     
     return `
@@ -120,16 +133,17 @@ COMPETIDOR ${i + 1}: ${c.url}
 - Título: ${c.titulo || 'N/A'}
 - Descripción: ${c.descripcion || 'N/A'}
 - Servicios detectados (${c.servicios?.length || 0}): ${c.servicios?.join(', ') || 'No detectados'}
-- Precios visibles: ${preciosTexto}
+- Precios: ${preciosTexto}
 - Contacto: Tel ${c.contacto?.telefono || 'No'} / Email ${c.contacto?.email || 'No'}
 - Redes sociales: ${c.redesSociales?.join(', ') || 'Ninguna'}
-- Estructura: ${c.estructura?.secciones || 0} secciones, ${c.estructura?.enlaces || 0} enlaces
-- Contenido analizado: ${c.contenidoCompleto?.length || 0} caracteres
+- Estructura web: ${c.estructura?.secciones || 0} secciones, ${c.estructura?.enlaces || 0} enlaces
+${doctoraliaInfo}
 
-EXTRACTO DE CONTENIDO:
+EXTRACTO DE CONTENIDO WEB:
 ${c.contenidoCompleto?.substring(0, 2000) || 'No disponible'}
 ...
   `;
+  }).join('\n');
   }).join('\n');
 
   return `Analiza estos ${competitors.length} competidores de una clínica médica en ${contexto.provincia || 'España'}:
