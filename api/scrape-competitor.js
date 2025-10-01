@@ -107,41 +107,34 @@ module.exports = async (req, res) => {
 // === NUEVA FUNCIÓN: Scraping de Doctoralia ===
 async function scrapeDoctoraliaProfile(nombreClinica, ciudad) {
   try {
-    // Construir búsqueda en Doctoralia
-    const searchQuery = `${nombreClinica} ${ciudad}`.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, '+');
+    // Construir búsqueda en Google para encontrar el perfil de Doctoralia
+    const searchQuery = `site:doctoralia.es ${nombreClinica} ${ciudad}`.trim();
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`;
     
-    const searchUrl = `https://www.doctoralia.es/buscar?q=${searchQuery}`;
+    console.log('Buscando en Google:', searchQuery);
     
-    console.log('Buscando en:', searchUrl);
-    
-    const searchResponse = await fetch(searchUrl, {
+    const searchResponse = await fetch(googleUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       }
     });
 
     if (!searchResponse.ok) {
-      console.log('No se pudo buscar en Doctoralia');
+      console.log('Error en búsqueda Google:', searchResponse.status);
       return { found: false };
     }
 
     const searchHtml = await searchResponse.text();
     
-    // Buscar URL del perfil en los resultados (múltiples patrones)
-    const profileMatch = searchHtml.match(/href=["'](\/[^"']*belaneve[^"']*)["']/i) ||
-                         searchHtml.match(/href=["'](\/clinica\/[^"']+)["']/i) ||
-                         searchHtml.match(/href=["'](\/centro[^"']*\/[^"']+)["']/i);
+    // Buscar URL de Doctoralia en los resultados de Google
+    const profileMatch = searchHtml.match(/https?:\/\/www\.doctoralia\.es\/[^"<>\s]+/i);
     
     if (!profileMatch) {
-      console.log('No se encontró perfil en Doctoralia');
-      console.log('HTML snippet:', searchHtml.substring(0, 500));
+      console.log('No se encontró perfil en resultados de Google');
       return { found: false };
     }
 
-    const profilePath = profileMatch[1];
-    const profileUrl = `https://www.doctoralia.es${profilePath}`;
+    const profileUrl = profileMatch[0];
     
     console.log('Perfil encontrado:', profileUrl);
 
