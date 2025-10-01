@@ -1,251 +1,176 @@
-module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+// api/scrape-competitor.js
+// Serverless (Vercel / Node 18+). Sin dependencias externas.
+const KEYWORDS = [
+  'precio', 'precios', 'tarifa', 'tarifas', 'honorario', 'honorarios',
+  'servicio', 'servicios'
+];
 
+export default async function handler(req, res) {
   try {
-    const { url } = req.body || {};
-    
-    if (!url) {
-      return res.status(400).json({ error: 'URL requerida' });
-    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    const { url, maxExtraPages = 2, timeoutMs = 12000 } = req.body || {};
+    if (!url) return res.status(400).json({ error: 'Missing url' });
 
-    // Validar y limpiar URL
-    let cleanUrl = url.trim();
-    if (!cleanUrl.startsWith('http')) {
-      cleanUrl = 'https://' + cleanUrl;
-    }
+    const visited = new Set();
+    const toVisit = [normalizeUrl(url)];
+    const gathered = [];
 
-    console.log('Analizando con Jina AI:', cleanUrl);
+    while (toVisit.length && gathered.length < (1 + maxExtraPages)) {
+      const current = toVisit.shift();
+      if (!current || visited.has(current)) continue;
+      visited.add(current);
 
-    // Usar Jina AI Reader para obtener contenido completo
-    const jinaUrl = `https://r.jina.ai/${cleanUrl}`;
-    const response = await fetch(jinaUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'X-Return-Format': 'markdown'
+      const html = await safeFetchText(current, timeoutMs);
+      if (!html) continue;
+
+      const text = plainText(html);
+      gathered.push({ url: current, html, text });
+
+      // Solo descubrimos enlaces desde la HOME (o la primera página)
+      if (current === normalizeUrl(url)) {
+        const links = discoverLinks(html, current);
+        const filtered = rankByKeyword(links)
+          .filter(Boolean)
+          .slice(0, maxExtraPages); // limita páginas extra
+
+        for (const l of filtered) {
+          if (!visited.has(l)) toVisit.push(l);
+        }
       }
-    });
-
-    if (!response.ok) {
-      return res.json({
-        url: cleanUrl,
-        error: `Error ${response.status} al acceder a la web`,
-        status: 'error'
-      });
     }
 
-    const jinaData = await response.json();
-    const markdown = jinaData.data?.content || '';
-    const htmlContent = jinaData.data?.html || '';
+    const combinedText = gathered.map(g => g.text).join('\n\n');
+    const servicios = detectServicios(combinedText);
+    const preciosVisibles = detectPrecios(combinedText);
 
-    if (!markdown || markdown.length < 100) {
-      return res.json({
-        url: cleanUrl,
-        error: 'No se pudo extraer contenido de la web',
-        status: 'error'
-      });
-    }
+    // Título (mejor esfuerzo)
+    const titulo = extractTitle(gathered[0]?.html) || domainFrom(url);
 
-    console.log(`Contenido extraído: ${markdown.length} caracteres`);
-
-    // Extraer datos estructurados del markdown
-    const data = {
-      url: cleanUrl,
-      titulo: jinaData.data?.title || extractTitleFromMarkdown(markdown),
-      descripcion: jinaData.data?.description || extractFirstParagraph(markdown),
-      contenidoCompleto: markdown.substring(0, 15000), // Primeros 15k chars para mejor cobertura
-      servicios: extractServices(markdown),
-      preciosVisibles: extractPrices(markdown),
-      contacto: {
-        telefono: extractPhone(markdown),
-        email: extractEmail(markdown)
-      },
-      redesSociales: extractSocialMedia(markdown + ' ' + htmlContent),
-      palabrasClave: extractKeywords(markdown),
-      estructura: analyzeStructure(markdown),
+    return res.status(200).json({
       status: 'success',
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('Análisis completado:', {
-      servicios: data.servicios.length,
-      precios: data.preciosVisibles ? 'Sí' : 'No',
-      caracteres: markdown.length
+      urlBase: url,
+      titulo,
+      paginasLeidas: gathered.map(g => g.url),
+      caracteres: combinedText.length,
+      servicios,
+      preciosVisibles, // { min, max, promedio } o null
     });
 
-    return res.status(200).json(data);
-
-  } catch (error) {
-    console.error('Error en análisis:', error);
-    return res.status(500).json({ 
-      error: 'Error al analizar sitio web',
-      detail: error.message,
-      status: 'error'
-    });
+  } catch (err) {
+    console.error(err);
+    return res.status(200).json({ status: 'error', error: err.message || String(err) });
   }
-};
-
-// Funciones de extracción
-function extractTitleFromMarkdown(markdown) {
-  const match = markdown.match(/^#\s+(.+)$/m);
-  return match ? match[1].trim() : 'Sin título';
 }
 
-function extractFirstParagraph(markdown) {
-  const lines = markdown.split('\n').filter(l => l.trim().length > 50);
-  return lines[0]?.substring(0, 200) || '';
+/* ========== Helpers ========== */
+function normalizeUrl(u) {
+  try {
+    const url = new URL(u);
+    url.hash = '';
+    return url.toString();
+  } catch { return null; }
 }
 
-function extractServices(markdown) {
-  const servicios = new Set();
-  const commonServices = [
-    'fisioterapia', 'traumatologia', 'traumatología', 'dermatologia', 'dermatología',
-    'pediatria', 'pediatría', 'ginecologia', 'ginecología', 'psicologia', 'psicología',
-    'nutricion', 'nutrición', 'odontologia', 'odontología', 'cardiologia', 'cardiología',
-    'oftalmologia', 'oftalmología', 'cirugia plastica', 'cirugía plástica',
-    'medicina estetica', 'medicina estética', 'cirugia', 'cirugía',
-    'radiologia', 'radiología', 'analisis', 'análisis', 'urgencias',
-    'telemedicina', 'consulta online', 'botox', 'acido hialuronico', 'ácido hialurónico',
-    'peeling', 'mesoterapia', 'rinoplastia', 'liposuccion', 'liposucción',
-    'blefaroplastia', 'abdominoplastia', 'aumento de pecho', 'lifting',
-    'tricologia', 'tricología', 'medicina familiar'
-  ];
-  
-  const markdownLower = markdown.toLowerCase();
-  commonServices.forEach(servicio => {
-    if (markdownLower.includes(servicio)) {
-      servicios.add(servicio);
-    }
-  });
-  
-  return Array.from(servicios).slice(0, 15);
+async function safeFetchText(u, timeoutMs) {
+  try {
+    const ctrl = new AbortController();
+    const id = setTimeout(() => ctrl.abort(), timeoutMs);
+    const r = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0 OptimClinicBot' }, signal: ctrl.signal });
+    clearTimeout(id);
+    if (!r.ok) return null;
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('text/html')) return null;
+    return await r.text();
+  } catch { return null; }
 }
 
-function extractPrices(markdown) {
-  const precios = [];
-  const patterns = [
-    /(\d{1,3}(?:[.,]\d{3})*)\s*€/g,
-    /€\s*(\d{1,3}(?:[.,]\d{3})*)/g,
-    /desde\s+(\d{1,3}(?:[.,]\d{3})*)\s*€/gi,
-    /(\d{1,3}(?:[.,]\d{3})*)\s*euros?/gi
-  ];
-  
-  patterns.forEach(pattern => {
-    let match;
-    while ((match = pattern.exec(markdown)) !== null) {
-      const precioStr = match[1].replace(/[.,]/g, '');
-      const precio = parseInt(precioStr);
-      if (precio >= 30 && precio <= 50000) {
-        precios.push(precio);
-      }
-    }
-  });
-  
-  if (precios.length === 0) return null;
-  
-  const sorted = [...new Set(precios)].sort((a, b) => a - b);
-  
-  // Si hay precios muy altos (cirugías), separarlos de consultas
-  const consultaMax = 500;
-  const preciosConsulta = sorted.filter(p => p <= consultaMax);
-  const preciosCirugia = sorted.filter(p => p > consultaMax);
-  
-  const result = {};
-  
-  if (preciosConsulta.length > 0) {
-    result.consultas = {
-      min: preciosConsulta[0],
-      max: preciosConsulta[preciosConsulta.length - 1],
-      promedio: Math.round(preciosConsulta.reduce((a, b) => a + b, 0) / preciosConsulta.length)
-    };
+function plainText(html) {
+  // Quita script/style y colapsa espacios
+  let t = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  t = t.replace(/\s+/g, ' ').trim();
+  return t;
+}
+
+function discoverLinks(html, baseUrl) {
+  const base = new URL(baseUrl);
+  const links = [];
+  const rx = /<a\s+[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+  let m;
+  while ((m = rx.exec(html)) !== null) {
+    let href = m[1];
+    if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) continue;
+    try {
+      const abs = new URL(href, base).toString();
+      // Mantenemos solo mismo dominio para evitar irnos a fuera
+      if (new URL(abs).host === base.host) links.push(abs);
+    } catch { /* ignore */ }
   }
-  
-  if (preciosCirugia.length > 0) {
-    result.cirugias = {
-      min: preciosCirugia[0],
-      max: preciosCirugia[preciosCirugia.length - 1],
-      promedio: Math.round(preciosCirugia.reduce((a, b) => a + b, 0) / preciosCirugia.length)
-    };
-  }
-  
-  result.muestras = sorted.length;
-  result.todos = sorted;
-  
-  return result;
+  // quitamos duplicados
+  return Array.from(new Set(links));
 }
 
-function extractPhone(markdown) {
-  const patterns = [
-    /(\+34\s?)?[6789]\d{2}\s?\d{2}\s?\d{2}\s?\d{2}/g,
-    /tel[:\s]+(\+?34\s?)?[6789]\d{8}/gi
-  ];
-  
-  for (const pattern of patterns) {
-    const match = markdown.match(pattern);
-    if (match) return match[0].trim();
-  }
-  return null;
-}
-
-function extractEmail(markdown) {
-  const match = markdown.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-  return match ? match[0] : null;
-}
-
-function extractSocialMedia(content) {
-  const redes = [];
-  const patterns = {
-    facebook: /facebook\.com\/[a-zA-Z0-9._-]+/i,
-    instagram: /instagram\.com\/[a-zA-Z0-9._-]+/i,
-    twitter: /twitter\.com\/[a-zA-Z0-9._-]+/i,
-    linkedin: /linkedin\.com\/(company|in)\/[a-zA-Z0-9._-]+/i,
-    youtube: /youtube\.com\/(channel|c|user)\/[a-zA-Z0-9._-]+/i,
-    tiktok: /tiktok\.com\/@[a-zA-Z0-9._-]+/i
-  };
-  
-  Object.entries(patterns).forEach(([red, pattern]) => {
-    if (pattern.test(content)) {
-      redes.push(red);
-    }
+function rankByKeyword(links) {
+  const ranked = links.map(l => {
+    const path = (new URL(l)).pathname.toLowerCase();
+    const score = KEYWORDS.reduce((acc, k) => acc + (path.includes(k) ? 1 : 0), 0);
+    return { l, score };
   });
-  
-  return redes;
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked.filter(x => x.score > 0).map(x => x.l);
 }
 
-function extractKeywords(markdown) {
-  const words = markdown.toLowerCase()
-    .replace(/[^a-zá-úñ\s]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 4);
-  
-  const freq = {};
-  words.forEach(w => {
-    freq[w] = (freq[w] || 0) + 1;
-  });
-  
-  const stopwords = ['sobre', 'desde', 'hasta', 'para', 'esta', 'este', 'puede', 'como', 'donde', 'cuando', 'pero', 'también', 'hacer', 'nuestro', 'nuestra'];
-  
-  return Object.entries(freq)
-    .filter(([w]) => !stopwords.includes(w))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([w]) => w);
+function detectServicios(text) {
+  // Extrae “servicios” por heurística básica (palabras tras “servicios”/“especialidades”)
+  const out = new Set();
+  const rx = /\b(servicios|especialidades|tratamientos)\b[:\s-]*([^.]{10,120})/gi;
+  let m;
+  while ((m = rx.exec(text)) !== null) {
+    const chunk = m[2]
+      .replace(/[,;•\-–]+/g, ',')
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 2 && s.length < 60);
+    chunk.forEach(s => out.add(capitalize(s)));
+  }
+  return Array.from(out).slice(0, 30);
 }
 
-function analyzeStructure(markdown) {
-  const lines = markdown.split('\n');
-  const headers = lines.filter(l => l.startsWith('#'));
-  const links = (markdown.match(/\[([^\]]+)\]\([^)]+\)/g) || []).length;
-  const images = (markdown.match(/!\[[^\]]*\]\([^)]+\)/g) || []).length;
-  
-  return {
-    secciones: headers.length,
-    enlaces: links,
-    imagenes: images,
-    longitudTotal: markdown.length
-  };
+function detectPrecios(text) {
+  // Busca números con € o formatos habituales
+  const euros = [];
+  const rxMoney = /(?:€\s?|\b)(\d{2,4})(?:[.,]\d{1,2})?\s?(?:€)?/g;
+  let m;
+  while ((m = rxMoney.exec(text)) !== null) {
+    const val = parseInt(m[1], 10);
+    // Heurística: precios razonables de consulta/procedimiento
+    if (val >= 20 && val <= 15000) euros.push(val);
+  }
+  if (!euros.length) return null;
+  euros.sort((a, b) => a - b);
+  const min = euros[0];
+  const max = euros[euros.length - 1];
+  const avg = Math.round(euros.reduce((a, b) => a + b, 0) / euros.length);
+  return { min, max, promedio: avg };
 }
+
+function extractTitle(html) {
+  const m = /<title>([^<]+)<\/title>/i.exec(html || '');
+  return m ? decodeHtml(m[1]).trim() : null;
+}
+
+function decodeHtml(s) {
+  return s
+    .replace(/&aacute;/g, 'á').replace(/&eacute;/g, 'é').replace(/&iacute;/g, 'í')
+    .replace(/&oacute;/g, 'ó').replace(/&uacute;/g, 'ú').replace(/&ntilde;/g, 'ñ')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+
+function domainFrom(u) {
+  try { return new URL(u).host; } catch { return u; }
+}
+
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }

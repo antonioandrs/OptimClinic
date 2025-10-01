@@ -1342,40 +1342,88 @@ async function analyzeCompetitors() {
     
     try {
       const contexto = {
-        provincia: getEl('provincia')?.value || 'Madrid',
-        especialidad: getEl('especialidadScraper')?.value || 'general',
-        estrategia: getEl('estrategiaTipo')?.value || 'premium',
-        ubicacion: getEl('ubicacionTipo')?.value || 'centro'
-      };
-      
-      const res = await fetch('/api/analyze-competitors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ competitors: competitorsData, contexto })
-      });
-      
-      const analysis = await res.json();
-      
-      if (analysis.error) {
-        console.warn('Usando análisis base:', analysis.error);
-      }
-      
-      renderAnalysisResults(analysis);
-      getEl('competitorResults').style.display = 'block';
-      
-      // Scroll suave a resultados
-      setTimeout(() => {
-        getEl('competitorResults').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 300);
-      
-    } catch (error) {
-      console.error('Error en análisis:', error);
-      alert('Error al generar análisis: ' + error.message);
-    }
-  } else {
-    alert('No se pudo analizar ningún competidor. Verifica las URLs.');
+  provincia: getEl('provincia')?.value || 'Madrid',
+  especialidad: getEl('especialidadScraper')?.value || 'general',
+  estrategia: getEl('estrategiaTipo')?.value || 'premium',
+  ubicacion: getEl('ubicacionTipo')?.value || 'centro'
+};
+
+// 1) Asegúrate de tener un array de URLs
+const urls = (competitorsData || [])
+  .map(c => (typeof c === 'string' ? c : c?.url))
+  .filter(Boolean);
+
+// Seguridad básica
+if (!urls.length) {
+  alert('No se pudo analizar ningún competidor. Verifica las URLs.');
+  btn.disabled = false;
+  btn.textContent = 'Analizar Competidores';
+  return;
+}
+
+try {
+  // 2) Llamada al nuevo endpoint
+  const res = await fetch('/api/analyze-competitors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      urls,
+      maxExtraPages: 2,   // puedes subir a 3–4 si usas Vercel Pro
+      timeoutMs: 9000
+    })
+  });
+
+  const payload = await res.json();
+  if (payload.error) {
+    console.warn('Aviso analyze-competitors:', payload.error);
   }
-  
+
+  const { items = [], mercado = null } = payload;
+
+  // 3) Normaliza a tu “shape” anterior para no tocar el renderer
+  //    - competitors: lista de competidores ya fusionados (Jina + scraper)
+  //    - rangoPrecios: usamos el agregado de mercado
+  //    - serviciosTop: top 20 servicios por frecuencia (opcional)
+  const serviciosTop = (() => {
+    const freq = {};
+    for (const it of items) {
+      (it.servicios || []).forEach(s => {
+        const k = (s || '').trim();
+        if (!k) return;
+        freq[k] = (freq[k] || 0) + 1;
+      });
+    }
+    return Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([s]) => s);
+  })();
+
+  const analysis = {
+    contexto,
+    competitors: items,         // <- lo que iteras en la UI
+    rangoPrecios: mercado,      // <- { minimo, maximo, promedio } agregado
+    serviciosTop,               // <- opcional para chips/nube de tags
+    resumenEjecutivo: null,     // <- si tu render lo usa, puedes generar uno aquí
+    debug: { count: items.length }
+  };
+
+  // 4) Render y mostrar
+  renderAnalysisResults(analysis);
+  getEl('competitorResults').style.display = 'block';
+
+  setTimeout(() => {
+    getEl('competitorResults').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 300);
+
+} catch (error) {
+  console.error('Error en análisis:', error);
+  alert('Error al generar análisis: ' + error.message);
+} finally {
+  btn.disabled = false;
+  btn.textContent = 'Analizar Competidores';
+}
+
   btn.disabled = false;
   btn.textContent = 'Analizar Competidores';
 }
