@@ -129,12 +129,14 @@ async function scrapeDoctoraliaProfile(nombreClinica, ciudad) {
 
     const searchHtml = await searchResponse.text();
     
-    // Buscar URL del perfil en los resultados
-    const profileMatch = searchHtml.match(/href="(\/clinica\/[^"]+)"/i) || 
-                         searchHtml.match(/href="(\/[^"]+\/[^"]*clinica[^"]+)"/i);
+    // Buscar URL del perfil en los resultados (múltiples patrones)
+    const profileMatch = searchHtml.match(/href=["'](\/[^"']*belaneve[^"']*)["']/i) ||
+                         searchHtml.match(/href=["'](\/clinica\/[^"']+)["']/i) ||
+                         searchHtml.match(/href=["'](\/centro[^"']*\/[^"']+)["']/i);
     
     if (!profileMatch) {
       console.log('No se encontró perfil en Doctoralia');
+      console.log('HTML snippet:', searchHtml.substring(0, 500));
       return { found: false };
     }
 
@@ -289,10 +291,22 @@ function extractCity(markdown, url) {
     'córdoba', 'cordoba', 'valladolid', 'mallorca', 'vigo', 'gijón', 'gijon'
   ];
   
-  const textLower = (markdown + ' ' + url).toLowerCase();
+  // Priorizar ciudad en la URL (más confiable)
+  const urlLower = url.toLowerCase();
+  for (const ciudad of ciudades) {
+    if (urlLower.includes(ciudad)) {
+      return ciudad;
+    }
+  }
+  
+  // Si no está en URL, buscar en contenido
+  const textLower = markdown.toLowerCase();
+  
+  // Buscar en el primer 20% del contenido (más probable que sea relevante)
+  const primeraParte = textLower.substring(0, Math.floor(textLower.length * 0.2));
   
   for (const ciudad of ciudades) {
-    if (textLower.includes(ciudad)) {
+    if (primeraParte.includes(ciudad)) {
       return ciudad;
     }
   }
