@@ -708,13 +708,12 @@
     function eur(n) {
   var ivaSel = document.getElementById('ivaSel');
   var iva = Number(ivaSel ? ivaSel.value : 0) / 100;
-  var x = Math.round(Number(n || 0) * (1 + iva));   // sin decimales
+  var x = Math.round(Number(n || 0) * (1 + iva)); // sin decimales
   var neg = x < 0 ? '-' : '';
   var s = Math.abs(x).toString();
-  var grouped = s.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); // fuerza puntos cada 3
-  return `${neg}${grouped} €`; // NBSP antes de €
+  var grouped = s.replace(/\B(?=(\d{3})+(?!\d))/g, '.'); // 1.000.000
+  return `${neg}${grouped}\u00A0€`; // NBSP evita salto de línea
 }
-
     
     function getEl(id) { return document.getElementById(id); }
     function num(id) { var el = getEl(id); return Number(el && el.value || 0); }
