@@ -1620,6 +1620,253 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 /* =================== FIN COMPETITORS =================== */
 
+/* =================== ESTRATEGIA MERCADO =================== */
+
+async function generateStrategy() {
+  const out = document.getElementById('strategyOutput');
+  out.style.display = 'block';
+  out.innerHTML = `
+    <div class="analysis-card" style="background:#f0f9ff;">
+      <h3 class="analysis-title">🔍 Paso 1/3: Obteniendo datos de mercado...</h3>
+      <p>Scrapeando precios de Doctoralia...</p>
+    </div>
+  `;
+
+  try {
+    const tipo = document.getElementById('estrategiaTipo')?.value || 'premium';
+    const ubicacion = document.getElementById('ubicacionTipo')?.value || 'centro';
+    const provincia = (document.getElementById('provincia')?.value) || document.getElementById('provinciaActual')?.textContent || 'Madrid';
+    const especialidad = document.getElementById('especialidad')?.value || '';
+
+    // ======= PASO 1: SCRAPING DE DOCTORALIA =======
+    console.log('[1/3] Iniciando scraping de Doctoralia...');
+    
+    const scrapingRes = await fetch('/api/scrape-doctoralia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provincia,
+        especialidad,
+        adminPassword: prompt('Contraseña admin (necesaria para scraping):') || ''
+      })
+    });
+
+    let datosMercado = {
+      rangoConsulta: '€90-180',
+      mixPrivado: '62%',
+      crecimiento: '12%',
+      dso: '50 días'
+    };
+
+    if (scrapingRes.ok) {
+      const scrapingData = await scrapingRes.json();
+      console.log('[1/3] Scraping exitoso:', scrapingData);
+      
+      if (scrapingData.consulta) {
+        datosMercado.rangoConsulta = scrapingData.consulta;
+      }
+      if (scrapingData.mixPrivado) {
+        datosMercado.mixPrivado = scrapingData.mixPrivado;
+      }
+      if (scrapingData.crecimiento) {
+        datosMercado.crecimiento = scrapingData.crecimiento;
+      }
+      if (scrapingData.dso) {
+        datosMercado.dso = scrapingData.dso;
+      }
+
+      out.innerHTML = `
+        <div class="analysis-card" style="background:#d1fae5;">
+          <h3 class="analysis-title">✅ Paso 1/3 completado</h3>
+          <p><strong>Datos de mercado actualizados:</strong></p>
+          <ul>
+            <li>Rango consulta: ${datosMercado.rangoConsulta}</li>
+            <li>Mix privado: ${datosMercado.mixPrivado}</li>
+            <li>Muestras: ${scrapingData.muestras || 'N/A'}</li>
+          </ul>
+          <p>🤖 Paso 2/3: Generando estrategia con IA...</p>
+        </div>
+      `;
+    } else {
+      console.warn('[1/3] Scraping falló, usando datos por defecto');
+      out.innerHTML = `
+        <div class="analysis-card" style="background:#fef3c7;">
+          <h3 class="analysis-title">⚠️ Usando datos estimados</h3>
+          <p>No se pudo obtener datos de Doctoralia. Generando estrategia con datos de referencia...</p>
+        </div>
+      `;
+    }
+
+    const ticketMedio = Number(document.getElementById('ticketMedio')?.value || 120);
+    const pacientes = Number(document.getElementById('serviciosMes')?.value || 180);
+    const costesFijos = Number(document.getElementById('costesFijos')?.value || 12000);
+    const margenPct = Number((document.getElementById('margenActual')?.textContent || '65').toString().replace('%','')) || 65;
+
+    console.log('[2/3] Generando estrategia con IA...');
+    
+    const payload = {
+      tipo,
+      ubicacion,
+      provincia,
+      mercado: datosMercado,
+      finanzas: { ticketMedio, pacientes, costesFijos, margenPct }
+    };
+
+    console.log('[2/3] Payload para IA:', payload);
+
+    const res = await fetch('/api/strategy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const raw = await res.text();
+    console.log('[2/3] Respuesta de IA:', raw);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${raw}`);
+
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      throw new Error('La respuesta no es JSON válido: ' + e.message);
+    }
+
+    console.log('[3/3] Estrategia generada exitosamente');
+    renderStrategyFromAPI(data, { tipo, ubicacion });
+
+  } catch (err) {
+    console.error('Error:', err);
+    out.innerHTML = `
+      <div class="analysis-card" style="background:#fff0f0; border:1px solid #fecaca;">
+        <h3 class="analysis-title" style="color:#dc2626;">Error al generar estrategia</h3>
+        <p>${err.message}</p>
+        <pre style="white-space:pre-wrap; font-size:.85rem; color:#7f1d1d; margin-top:.75rem">${String(err)}</pre>
+      </div>
+    `;
+  }
+}
+
+// ========== FUNCIONES AUXILIARES PARA RENDERIZADO ==========
+
+function li(items) {
+  if (!items || !items.length) return '<p class="summary-muted">—</p>';
+  return `<ul style="margin:.25rem 0 .25rem .75rem">${items.map(x=>`<li>${x}</li>`).join('')}</ul>`;
+}
+
+function rowsKPIs(kpis) {
+  if (!Array.isArray(kpis) || !kpis.length) return '<p class="summary-muted">—</p>';
+  return `
+    <table class="table" style="margin-top:.5rem">
+      <thead><tr><th>KPI</th><th>Objetivo</th></tr></thead>
+      <tbody>
+        ${kpis.map(k=>`<tr><td>${k.nombre||'-'}</td><td>${k.objetivo||'-'}</td></tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function listCanales(canales) {
+  if (!Array.isArray(canales) || !canales.length) return '<p class="summary-muted">—</p>';
+  return canales.map(c => `
+    <div class="summary-card">
+      <div class="summary-title">${c.canal||'-'} <span class="summary-muted">${c.presupuestoPct?`(${c.presupuestoPct}% presupuesto)`:''}</span></div>
+      <div class="summary-muted"><strong>Objetivo:</strong> ${c.objetivo || '-'}</div>
+      ${li(c.mensajes || [])}
+    </div>
+  `).join('');
+}
+
+function listPlan(plan) {
+  if (!Array.isArray(plan) || !plan.length) return '<p class="summary-muted">—</p>';
+  return plan.map(f => `
+    <div class="summary-card">
+      <div class="summary-title">Días ${f.fase||'-'}</div>
+      ${li(f.acciones || [])}
+    </div>
+  `).join('');
+}
+
+function listCalendario(c) {
+  if (!Array.isArray(c) || !c.length) return '<p class="summary-muted">—</p>';
+  return c.map(m => `
+    <div class="summary-card">
+      <div class="summary-title">${m.mes||'-'}</div>
+      ${li(m.ideas || [])}
+    </div>
+  `).join('');
+}
+
+function renderStrategyFromAPI(s, ctx) {
+  const presupuestoPct = (typeof s.presupuestoSugeridoPctIngresos === 'string')
+    ? s.presupuestoSugeridoPctIngresos.replace('%','')
+    : (s.presupuestoSugeridoPctIngresos ?? '');
+
+  const personasList = Array.isArray(s.personas) ? s.personas.map(p =>
+    `<li><strong>${p.nombre||'-'}:</strong> dolores: ${p.dolor||'-'}. motivadores: ${p.motivadores||'-'}</li>`
+  ).join('') : '';
+
+  const out = document.getElementById('strategyOutput');
+  out.innerHTML = `
+    <div class="analysis-card" style="background:#eef6ff;border:1px solid #cfe3ff">
+      <h3 class="analysis-title">${s.titulo || 'Estrategia Recomendada'}</h3>
+      <p><strong>Enfoque:</strong> ${capitalize(ctx.tipo)} · <strong>Ubicación:</strong> ${capitalize(ctx.ubicacion)}</p>
+      ${s.resumen ? `<p style="margin:.5rem 0 1rem">${s.resumen}</p>` : ''}
+
+      <div class="summary-grid" style="margin-top:.5rem">
+        <div class="summary-card">
+          <div class="summary-title">Precio objetivo</div>
+          <div class="summary-value">${s.precioObjetivo || s.precio || '—'}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-title">% Marketing / Ingresos</div>
+          <div class="summary-value">${presupuestoPct ? presupuestoPct+'%' : '—'}</div>
+        </div>
+      </div>
+
+      <h4 class="section-title">Propuesta de valor</h4>
+      ${li(s.propuestaValor)}
+
+      <h4 class="section-title">Personas objetivo</h4>
+      ${personasList ? `<ul style="margin:.25rem 0 .25rem .75rem">${personasList}</ul>` : '<p class="summary-muted">—</p>'}
+
+      <h4 class="section-title">Posicionamiento</h4>
+      <p>${s.posicionamiento || '—'}</p>
+
+      <h4 class="section-title">Mix de canales (presupuesto ~100%)</h4>
+      <div class="summary-grid">${listCanales(s.mixCanales || s.canales)}</div>
+
+      <h4 class="section-title">Plan 90 días</h4>
+      <div class="summary-grid">${listPlan(s.plan90dias)}</div>
+
+      <h4 class="section-title">Calendario de contenidos</h4>
+      <div class="summary-grid">${listCalendario(s.calendarioContenido)}</div>
+
+      <h4 class="section-title">KPIs</h4>
+      ${rowsKPIs(s.kpis)}
+
+      <h4 class="section-title">Riesgos</h4>
+      ${li(s.riesgos)}
+
+      <h4 class="section-title">Alianzas</h4>
+      ${li(s.alianzas)}
+
+      ${s.notas ? `<div class="summary-muted" style="margin-top:1rem">${s.notas}</div>` : ''}
+    </div>
+  `;
+}
+
+function capitalize(s) { 
+  return (s||'').charAt(0).toUpperCase() + (s||'').slice(1); 
+}
+
+function getFallbackStrategyHTML(ctx) {
+  return `
+    <div class="summary-card">
+      <p>Estrategia base para: <strong>${ctx.tipo}</strong> en ubicación <strong>${ctx.ubicacion}</strong></p>
+      <p class="summary-muted">Los datos de mercado no están disponibles. Configure las variables de entorno en Vercel.</p>
+    </div>
+  `;
+}
 
 /* ===================== IA RESUMEN Y EXPLICACIONES ===================== */
 
