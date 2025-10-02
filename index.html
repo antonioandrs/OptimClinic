@@ -469,6 +469,33 @@
             <h3 style="margin:2rem 0 1rem">💧 Resumen de Caja</h3>
             <div class="summary-grid" id="cashSummary"></div>
 
+<div class="divider"></div>
+<h3 style="margin:2rem 0 1rem">🧠 Análisis con IA para Médicos</h3>
+<div class="card" style="background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%); border: 2px solid #6366f1;">
+  <div class="card-body">
+    <p style="margin-top:0; color:#334155; font-size:0.95rem;">
+      Pulsa el botón para obtener un <strong>resumen en lenguaje claro</strong> y una <strong>guía de conceptos financieros</strong>.
+    </p>
+    <div class="form-row" style="margin-bottom: .5rem;">
+      <button id="aiAnalyze" class="btn btn-primary">🧠 Analizar con IA</button>
+    </div>
+    <div id="aiSummary" class="analysis-grid" style="display:none; margin-top:1rem;">
+      <div class="analysis-card">
+        <h3 class="analysis-title">🎯 Resumen Ejecutivo</h3>
+        <div id="aiExecutive"></div>
+      </div>
+      <div class="analysis-card">
+        <h3 class="analysis-title">📚 Guía para no financieros</h3>
+        <div id="aiGlossary"></div>
+      </div>
+      <div class="analysis-card">
+        <h3 class="analysis-title">🧩 Palancas y Riesgos</h3>
+        <div id="aiLevers"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
             <div class="divider"></div>
             <div class="form-row">
               <button id="exportCsv" class="btn btn-primary">📊 Exportar CSV</button>
@@ -1086,7 +1113,7 @@
       var impacts = vars.map(v => {
         const plus  = impactFor(v.field, v.variation, +1);
         const minus = impactFor(v.field, v.variation, -1);
-        return { name: v.label, positive: plus, negative: minus, total: Math.abs(plus) + Math.abs(minus) };
+        return { name: v.label, positive: plus, negative: minus, total: Math.abs(plus) + Math.abs(minus), variation: v.variation };
       });
       
       impacts.sort((a,b) => b.total - a.total);
@@ -1581,6 +1608,115 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 /* =================== FIN COMPETITORS =================== */
+
+
+/* ===================== IA RESUMEN Y EXPLICACIONES ===================== */
+
+function percent(n){ return (Number(n)||0).toFixed(1) + '%'; }
+function posNeg(n){ return n >= 0 ? 'positivo' : 'negativo'; }
+
+function textoBreakeven(d){
+  if (!d.beMes) return 'No se alcanza el punto de equilibrio (break-even) en el horizonte modelado.';
+  return `Se alcanza el punto de equilibrio en el mes ${d.beMes} (${d.monthLabels[d.beMes-1]}).`;
+}
+
+function textoROI(d){
+  if (!isFinite(d.roiFinal)) return 'El ROI no es calculable con los parámetros actuales.';
+  const tono = d.roiFinal >= 150 ? 'alto' : (d.roiFinal >= 70 ? 'medio' : 'bajo');
+  return `ROI proyectado: ${d.roiFinal.toFixed(1)}% (${tono}).`;
+}
+
+function textoNPV(d){
+  const signo = d.npvVal >= 0 ? 'positivo' : 'negativo';
+  return `VAN (valor actual neto) ${signo}: ${eur(d.npvVal)} (descuento anual aplicado).`;
+}
+
+function textoIRR(d){
+  if (!isFinite(d.irrAnual)) return 'TIR no disponible con estos flujos.';
+  return `TIR anual estimada: ${(d.irrAnual*100).toFixed(1)}%.`;
+}
+
+function explicacionBreveConceptos(){
+  return `
+  <ul style="margin:0 0 0 1rem; padding-left:1rem; line-height:1.7;">
+    <li><strong>Break-even (punto de equilibrio):</strong> Momento en el que <em>lo que entra</em> (cobros) iguala <em>lo que sale</em> (pagos). A partir de ahí, el proyecto ya no “come” caja.</li>
+    <li><strong>ROI:</strong> Porcentaje de retorno sobre la inversión inicial. Si inviertes 100 y recuperas 250, el ROI es 150%.</li>
+    <li><strong>VAN (NPV):</strong> Traduce todos los cobros/pagos futuros a dinero de hoy. <em>Positivo</em> suele indicar proyecto interesante.</li>
+    <li><strong>TIR (IRR):</strong> “Interés” anual implícito del proyecto. Útil para comparar con otras opciones (p. ej., coste de financiación).</li>
+    <li><strong>EBITDA:</strong> Resultado operativo antes de amortizaciones e intereses. Señal de “músculo” del negocio en el día a día.</li>
+    <li><strong>Coste fijo vs variable:</strong> Fijo (alquiler, sueldos base) no cambia con pacientes; variable (material por paciente) sí.</li>
+    <li><strong>No-show:</strong> Citas que no acuden. Sube la capacidad o baja ingresos si no se gestiona.</li>
+    <li><strong>DSO (aseguradoras):</strong> Días que tardan en pagar. Afecta a la caja, no tanto al resultado.</li>
+    <li><strong>Carencia y amortización:</strong> Periodo pagando solo intereses (carencia) y reparto del CAPEX en el tiempo (amortización contable).</li>
+  </ul>`;
+}
+
+function topPalancas(d){
+  // Usa tu análisis de sensibilidad para detectar 3 palancas principales
+  const impacts = calcularSensibilidad() || [];
+  const top3 = impacts.slice(0,3);
+  const bullets = top3.map(i=>{
+    const mejor = (i.positive>=0?'+':'') + i.positive.toFixed(1);
+    const peor  = (i.negative>=0?'+':'') + i.negative.toFixed(1);
+    return `<li><strong>${i.name}:</strong> +${i.variation? (i.variation*100):20}% → ${mejor} p.p. ROI | -${i.variation? (i.variation*100):20}% → ${peor} p.p. ROI.</li>`;
+  }).join('');
+
+  let recs = [];
+  if (impacts.find(v=>v.name.includes('Tarifa'))) recs.push('Revisar tarifas (pack de servicios, premiumización, diferenciar por complejidad).');
+  if (impacts.find(v=>v.name.includes('Pacientes'))) recs.push('Plan comercial/marketing para elevar primeras visitas y fidelización.');
+  if (impacts.find(v=>v.name.includes('Costes Fijos'))) recs.push('Negociar alquiler/servicios y ajustar estructura hasta alcanzar tracción.');
+  if (impacts.find(v=>v.name.includes('No-show'))) recs.push('Recordatorios, prepago de señal, overbooking prudente en horas pico.');
+  if (impacts.find(v=>v.name.includes('Coste Variable'))) recs.push('Acuerdos con proveedores y protocolos que reduzcan consumibles por acto.');
+  if (impacts.find(v=>v.name.includes('Marketing'))) recs.push('Optimizar CPA: campañas con tracking de conversión y ramp-up por etapas.');
+
+  return {
+    lista:`<ul style="margin:0 0 0 1rem; padding-left:1rem; line-height:1.7;">${bullets||'<li>Genera primero el análisis para ver palancas.</li>'}</ul>`,
+    recs:`<ul style="margin:0 0 0 1rem; padding-left:1rem; line-height:1.7;">${recs.map(r=>`<li>${r}</li>`).join('')||'<li>Sin recomendaciones hasta tener sensibilidad.</li>'}</ul>`
+  };
+}
+
+function generateAISummary(){
+  if(!lastData){ alert('Primero genera el análisis financiero.'); return; }
+  const d = lastData;
+
+  // Resumen ejecutivo curto y accionable
+  const linea1 = textoBreakeven(d);
+  const linea2 = `${textoROI(d)} ${textoIRR(d)}`;
+  const linea3 = `${textoNPV(d)} Necesidad máxima de caja: ${eur(d.necesidadMaxCaja)} (momento más tenso: ${d.mesMinCaja}).`;
+
+  // Palancas / riesgos
+  const pal = topPalancas(d);
+  const riesgoLiquidez = d.necesidadMaxCaja < 0 ? 
+    `Atención a la caja: en el peor mes faltarían ${eur(Math.abs(d.necesidadMaxCaja))}. Considera línea de crédito o escalado de gastos.` :
+    `Liquidez suficiente con los supuestos actuales. Mantén colchón por si el DSO empeora.`;
+
+  // Render
+  document.getElementById('aiExecutive').innerHTML = `
+    <p style="margin:0 0 .5rem 0;">${linea1}</p>
+    <p style="margin:.25rem 0;">${linea2}</p>
+    <p style="margin:.25rem 0;">${linea3}</p>
+    <div style="margin-top:1rem; padding:.75rem; background:#ecfeff; border:1px solid #06b6d4; border-radius:8px; color:#0f172a;">
+      <strong>Estado de rentabilidad:</strong> ${d.estadoRentabilidad}.
+    </div>
+  `;
+  document.getElementById('aiGlossary').innerHTML = explicacionBreveConceptos();
+  document.getElementById('aiLevers').innerHTML = `
+    <h4 style="margin:.25rem 0 .5rem; color:#1f2937; font-size:1rem;">Palancas con mayor impacto</h4>
+    ${pal.lista}
+    <h4 style="margin:1rem 0 .5rem; color:#1f2937; font-size:1rem;">Recomendaciones prácticas</h4>
+    ${pal.recs}
+    <h4 style="margin:1rem 0 .5rem; color:#1f2937; font-size:1rem;">Riesgo de liquidez</h4>
+    <p style="margin:.25rem 0;">${riesgoLiquidez}</p>
+  `;
+
+  const wrap = document.getElementById('aiSummary');
+  wrap.style.display = 'grid';
+  // scroll suave al resultado
+  setTimeout(()=>wrap.scrollIntoView({behavior:'smooth', block:'start'}), 100);
+}
+
+// Evento del botón
+document.getElementById('aiAnalyze')?.addEventListener('click', generateAISummary);
 
 
     /* ===================== REPORTS ===================== */
