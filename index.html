@@ -1998,151 +1998,251 @@ function kpiLine(label, value, note){
 function safePct(n){
   return (isFinite(n) ? n.toFixed(1) + '%' : '—');
 }
-
 function generateMasterReport(){
-  // --- Entradas de las tres pestañas ---
   const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
   const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
   const fecha = new Date().toLocaleDateString('es-ES');
 
   // Finanzas
   const d = lastData;
-  const beTxt  = d?.beMes ? `Mes ${d.beMes} (${d.monthLabels[d.beMes-1]})` : 'No alcanzado';
-  const roiTxt = d ? safePct(d.roiFinal) : '—';
-  const irrTxt = (d && isFinite(d.irrAnual)) ? (d.irrAnual*100).toFixed(1) + '%' : '—';
-  const npvTxt = d ? eur(d.npvVal) : '—';
-  const cajaTxt = d ? eur(d.necesidadMaxCaja) + (d.mesMinCaja ? ` — Tensión: ${d.mesMinCaja}` : '') : '—';
-
-  // Gráficos (imágenes base64)
-  const imgPnl    = chartImgOrNull(charts.pnl);
-  const imgCash   = chartImgOrNull(charts.cash);
-  const imgTornado= chartImgOrNull(charts.tornado);
-
-  // Palancas
-  let palancasHtml = '<em>Ejecuta primero el análisis financiero para ver palancas...</em>';
-  if (d) {
-    const pal = topPalancas(d);
-    palancasHtml = `
-      <h4 style="margin:.75rem 0 .25rem; color:#111827;">Top 3 palancas</h4>
-      ${pal.lista}
-      <h4 style="margin:1rem 0 .25rem; color:#111827;">Recomendaciones</h4>
-      ${pal.recs}
-    `;
+  if (!d) {
+    alert('Genera primero el análisis financiero en la pestaña de Planificación Financiera');
+    return;
   }
+
+  const beTxt = d.beMes ? `Mes ${d.beMes} (${d.monthLabels[d.beMes-1]})` : 'No alcanzado';
+  const roiTxt = safePct(d.roiFinal);
+  const irrTxt = (isFinite(d.irrAnual)) ? (d.irrAnual*100).toFixed(1) + '%' : '—';
+  const npvTxt = eur(d.npvVal);
+  const cajaTxt = eur(d.necesidadMaxCaja) + (d.mesMinCaja ? ` (${d.mesMinCaja})` : '');
 
   // Competidores
   const comp = compAnalysis || null;
-  const compResumen = comp?.resumenEjecutivo || 'Ejecuta el análisis de competidores para completar este apartado.';
+  const compResumen = comp?.resumenEjecutivo || 'No disponible - Ejecuta el análisis de competidores';
   const compPrecio = comp?.rangoPrecios ? {
     min: comp.rangoPrecios.minimo ?? '—',
     avg: comp.rangoPrecios.promedio ?? '—',
     max: comp.rangoPrecios.maximo ?? '—'
   } : null;
-  const compN = Array.isArray(competitors) ? competitors.length : (comp?.total || '—');
-  const compPos = comp?.posicionamientoRecomendado || '';
+  const compN = Array.isArray(competitors) && competitors.length > 0 ? competitors.length : '—';
+  const compPos = comp?.posicionamientoRecomendado || 'No disponible';
 
   // Mercado
-  const provincia = document.getElementById('provinciaActual')?.textContent || (document.getElementById('provincia')?.value || '—');
+  const provincia = document.getElementById('provinciaActual')?.textContent || '—';
   const rangoConsulta = document.getElementById('rangoConsulta')?.textContent || '—';
   const mixPrivado = document.getElementById('mixPrivado')?.textContent || '—';
   const crecimientoSector = document.getElementById('crecimientoSector')?.textContent || '—';
   const dsoPromedio = document.getElementById('dsoPromedio')?.textContent || '—';
 
-  // Cabecera visual (logo si existe en la cabecera)
+  // Logo
   const logoSrc = document.querySelector('.logo img')?.src || '';
 
-  // --- Construcción del informe ---
+  // Tabla detalle mensual (primeros 12 meses)
+  const mesesTabla = Math.min(12, d.mesesArr.length);
+  let tablaHtml = `
+    <table style="width:100%; border-collapse:collapse; font-size:0.75rem; margin-top:1rem;">
+      <thead style="background:#f1f5f9;">
+        <tr>
+          <th style="padding:0.5rem; border:1px solid #e5e7eb; text-align:left;">Mes</th>
+          <th style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">Pacientes</th>
+          <th style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">Ingresos</th>
+          <th style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">EBITDA</th>
+          <th style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">Flujo Mes</th>
+          <th style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">Flujo Acum.</th>
+        </tr>
+      </thead>
+      <tbody>`;
+  
+  for (let i = 0; i < mesesTabla; i++) {
+    const flujoColor = d.flujoAcum[i] >= 0 ? '#059669' : '#dc2626';
+    tablaHtml += `
+      <tr style="border-bottom:1px solid #e5e7eb;">
+        <td style="padding:0.5rem; border:1px solid #e5e7eb;">${d.monthLabels[i]}</td>
+        <td style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">${d.pacientesEfectivos[i]}</td>
+        <td style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">${eur(d.ingresos[i])}</td>
+        <td style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right; color:${d.ebitda[i] >= 0 ? '#059669' : '#dc2626'}">${eur(d.ebitda[i])}</td>
+        <td style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right;">${eur(d.flujoNeto[i])}</td>
+        <td style="padding:0.5rem; border:1px solid #e5e7eb; text-align:right; font-weight:600; color:${flujoColor}">${eur(d.flujoAcum[i])}</td>
+      </tr>`;
+  }
+  tablaHtml += `</tbody></table>`;
+
+  // Palancas
+  const pal = topPalancas(d);
+  const palancasHtml = `
+    <ul style="margin:0.5rem 0 0 1.5rem; line-height:1.7; font-size:0.85rem;">
+      ${pal.lista.replace(/<ul[^>]*>|<\/ul>/g, '')}
+    </ul>
+    <div style="margin-top:1rem;">
+      <strong style="color:#1f2937; font-size:0.9rem;">Recomendaciones prácticas:</strong>
+      <ul style="margin:0.5rem 0 0 1.5rem; line-height:1.7; font-size:0.85rem;">
+        ${pal.recs.replace(/<ul[^>]*>|<\/ul>/g, '')}
+      </ul>
+    </div>`;
+
+  // Competidores - Oportunidades
+  const oportunidadesHtml = comp?.oportunidades ? comp.oportunidades.slice(0, 3).map(op => `
+    <div style="padding:0.75rem; background:${op.impacto === 'alto' ? '#dbeafe' : '#fef3c7'}; border-left:3px solid ${op.impacto === 'alto' ? '#2563eb' : '#f59e0b'}; border-radius:6px; margin-bottom:0.75rem;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+        <strong style="font-size:0.9rem; color:#111827;">${op.gap}</strong>
+        <span style="font-size:0.7rem; padding:0.15rem 0.5rem; background:${op.impacto === 'alto' ? '#2563eb' : '#f59e0b'}; color:white; border-radius:10px;">${op.impacto}</span>
+      </div>
+      <p style="margin:0; font-size:0.8rem; color:#475569;">${op.accion}</p>
+    </div>
+  `).join('') : '<p style="font-size:0.85rem; color:#6b7280;">No disponible</p>';
+
+  // HTML del informe
   const html = `
-  <div style="font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827;">
-    <!-- Portada -->
-    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem;">
-      ${logoSrc ? `<img src="${logoSrc}" alt="Logo" style="width:72px; height:72px; border-radius:12px; object-fit:cover;">` : ``}
-      <div>
-        <h2 style="margin:0; font-size:1.5rem;">Informe Integral (TOP)</h2>
-        <div style="color:#6b7280; font-size:.9rem;">${empresa} • ${fecha}</div>
-        <div style="color:#6b7280; font-size:.9rem;">Responsable: ${responsable}</div>
+  <div style="font-family:Inter, system-ui, sans-serif; color:#111827; max-width:1000px; margin:0 auto; background:white;">
+    
+    <!-- PORTADA -->
+    <div style="background:linear-gradient(135deg, #2563eb 0%, #0891b2 100%); color:white; padding:3rem 2rem; border-radius:16px; margin-bottom:2rem;">
+      <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:1.5rem;">
+        ${logoSrc ? `<img src="${logoSrc}" alt="Logo" style="width:96px; height:96px; border-radius:16px; object-fit:cover; background:white; padding:0.5rem;">` : ''}
+        <div>
+          <h1 style="margin:0; font-size:2.5rem; font-weight:800;">Informe Integral</h1>
+          <div style="font-size:1.1rem; opacity:0.95; margin-top:0.5rem;">${empresa}</div>
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; font-size:0.95rem; opacity:0.9;">
+        <div>📅 Fecha: ${fecha}</div>
+        <div>👤 Responsable: ${responsable}</div>
       </div>
     </div>
 
-    <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:1rem; margin-bottom:1rem;">
-      <strong>Resumen Ejecutivo</strong>
-      <p style="margin:.5rem 0 0;">
-        ${d ? d.analisisTexto : 'Ejecuta primero la pestaña de Planificación Financiera.'}
+    <!-- RESUMEN EJECUTIVO -->
+    <div style="background:linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border:2px solid #059669; border-radius:12px; padding:1.5rem; margin-bottom:2rem;">
+      <h2 style="margin:0 0 1rem; font-size:1.3rem; color:#059669;">📊 Resumen Ejecutivo</h2>
+      <p style="margin:0; font-size:1rem; line-height:1.6;">
+        <strong>${d.analisisTexto.replace(/<[^>]*>/g, '')}</strong>
       </p>
     </div>
 
-    <!-- 1. Resultados Financieros -->
-    <h3 style="margin:1rem 0 .5rem;">1) Resultados Financieros</h3>
-    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:1rem; border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-      ${kpiLine('Inversión inicial (CAPEX)', eur(Number(document.getElementById('capex')?.value || 0)))}
-      ${kpiLine('Horizonte', (document.getElementById('meses')?.value || '—') + ' meses')}
-      ${kpiLine('Punto de equilibrio', beTxt)}
-      ${kpiLine('ROI proyectado', roiTxt)}
-      ${kpiLine('VAN (NPV)', npvTxt)}
-      ${kpiLine('TIR anual', irrTxt)}
-      ${kpiLine('Necesidad máx. de caja', cajaTxt)}
-    </div>
-
-    <div style="display:grid; grid-template-columns:1fr; gap:1rem; margin:1rem 0;">
-      ${imgPnl ? `
-        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-          <div style="font-weight:600; margin-bottom:.5rem;">P&L Operativo</div>
-          <img src="${imgPnl}" alt="P&L" style="width:100%; height:auto; border-radius:8px;">
-        </div>` : ``}
-      ${imgCash ? `
-        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-          <div style="font-weight:600; margin-bottom:.5rem;">Flujo de Caja Acumulado</div>
-          <img src="${imgCash}" alt="Cash" style="width:100%; height:auto; border-radius:8px;">
-        </div>` : ``}
-      ${imgTornado ? `
-        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-          <div style="font-weight:600; margin-bottom:.5rem;">Análisis de Sensibilidad (Tornado)</div>
-          <img src="${imgTornado}" alt="Tornado" style="width:100%; height:auto; border-radius:8px;">
-        </div>` : ``}
-    </div>
-
-    <!-- 2. Competidores y posicionamiento -->
-    <h3 style="margin:1rem 0 .5rem;">2) Competidores y Posicionamiento</h3>
-    <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-      <p style="margin:0 0 .5rem;">${compResumen}</p>
-      <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:.5rem;">
-        ${kpiLine('Competidores analizados', compN)}
-        ${kpiLine('Precio medio mercado', compPrecio ? `€${compPrecio.avg}` : '—', compPrecio ? `Rango: €${compPrecio.min} - €${compPrecio.max}` : '')}
+    <!-- 1. RESULTADOS FINANCIEROS -->
+    <div style="page-break-inside:avoid; margin-bottom:2rem;">
+      <h2 style="margin:0 0 1rem; font-size:1.5rem; color:#2563eb; border-bottom:3px solid #2563eb; padding-bottom:0.5rem;">
+        1️⃣ Resultados Financieros
+      </h2>
+      
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:1rem; margin-bottom:1.5rem;">
+        <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; text-align:center;">
+          <div style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">Inversión Inicial</div>
+          <div style="font-size:1.8rem; font-weight:800; color:#111827;">${eur(num('capex'))}</div>
+        </div>
+        <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; text-align:center;">
+          <div style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">Break-even</div>
+          <div style="font-size:1.8rem; font-weight:800; color:#111827;">${beTxt}</div>
+        </div>
+        <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; text-align:center;">
+          <div style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">ROI Final</div>
+          <div style="font-size:1.8rem; font-weight:800; color:#059669;">${roiTxt}</div>
+        </div>
       </div>
-      ${compPos ? `<div style="margin-top:.75rem; background:#ecfdf5; border:1px solid #059669; padding:1rem; border-radius:8px;">
-        <strong>Posicionamiento recomendado</strong>
-        <p style="margin:.5rem 0 0;">${compPos}</p>
-      </div>` : ``}
-    </div>
 
-    <!-- 3. Inteligencia de Mercado -->
-    <h3 style="margin:1rem 0 .5rem;">3) Inteligencia de Mercado</h3>
-    <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-      <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:.5rem;">
-        ${kpiLine('Área analizada', provincia)}
-        ${kpiLine('Consulta especializada (rango)', rangoConsulta)}
-        ${kpiLine('Mix privado estimado', mixPrivado)}
-        ${kpiLine('Crecimiento sector', crecimientoSector)}
-        ${kpiLine('DSO aseguradoras', dsoPromedio)}
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:1rem; margin-bottom:1.5rem;">
+        <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; text-align:center;">
+          <div style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">VAN (NPV)</div>
+          <div style="font-size:1.5rem; font-weight:800; color:#111827;">${npvTxt}</div>
+        </div>
+        <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; text-align:center;">
+          <div style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">TIR Anual</div>
+          <div style="font-size:1.5rem; font-weight:800; color:#111827;">${irrTxt}</div>
+        </div>
+        <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1rem; text-align:center;">
+          <div style="font-size:0.8rem; color:#6b7280; margin-bottom:0.5rem;">Necesidad Máx. Caja</div>
+          <div style="font-size:1.5rem; font-weight:800; color:#dc2626;">${cajaTxt}</div>
+        </div>
       </div>
-      <div style="margin-top:.75rem; font-size:.85rem; color:#6b7280;">* Indicadores orientativos para decisión estratégica. Validar con estudio local.</div>
+
+      <h3 style="margin:1.5rem 0 0.75rem; font-size:1.1rem; color:#111827;">📋 Detalle Mensual (Año 1)</h3>
+      ${tablaHtml}
+      <p style="font-size:0.75rem; color:#6b7280; margin-top:0.5rem; font-style:italic;">
+        * Tabla resumida con primeros 12 meses. Ver pestaña Planificación Financiera para detalle completo.
+      </p>
     </div>
 
-    <!-- 4. Palancas y riesgos -->
-    <h3 style="margin:1rem 0 .5rem;">4) Palancas y Riesgos</h3>
-    <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
-      ${palancasHtml}
-      ${d ? `
-        <h4 style="margin:1rem 0 .25rem; color:#111827;">Riesgo de liquidez</h4>
-        <p style="margin:.25rem 0;">
+    <!-- 2. COMPETIDORES -->
+    <div style="page-break-inside:avoid; margin-bottom:2rem;">
+      <h2 style="margin:0 0 1rem; font-size:1.5rem; color:#2563eb; border-bottom:3px solid #2563eb; padding-bottom:0.5rem;">
+        2️⃣ Análisis de Competencia
+      </h2>
+      
+      <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1.5rem; margin-bottom:1rem;">
+        <p style="margin:0 0 1rem; font-size:0.95rem; line-height:1.6;">${compResumen}</p>
+        
+        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:1rem;">
+          <div style="text-align:center; padding:1rem; background:white; border-radius:8px;">
+            <div style="font-size:0.8rem; color:#6b7280;">Competidores Analizados</div>
+            <div style="font-size:2rem; font-weight:800; color:#2563eb;">${compN}</div>
+          </div>
+          <div style="text-align:center; padding:1rem; background:white; border-radius:8px;">
+            <div style="font-size:0.8rem; color:#6b7280;">Precio Medio Mercado</div>
+            <div style="font-size:2rem; font-weight:800; color:#2563eb;">${compPrecio ? `€${compPrecio.avg}` : '—'}</div>
+            ${compPrecio ? `<div style="font-size:0.75rem; color:#6b7280;">Rango: €${compPrecio.min} - €${compPrecio.max}</div>` : ''}
+          </div>
+        </div>
+      </div>
+
+      ${compPos !== 'No disponible' ? `
+      <div style="background:#ecfdf5; border:2px solid #059669; border-radius:12px; padding:1.5rem; margin-bottom:1rem;">
+        <h3 style="margin:0 0 0.75rem; font-size:1rem; color:#059669;">🎯 Posicionamiento Recomendado</h3>
+        <p style="margin:0; font-size:0.9rem; line-height:1.6;">${compPos}</p>
+      </div>` : ''}
+
+      <h3 style="margin:1.5rem 0 0.75rem; font-size:1.1rem; color:#111827;">💡 Oportunidades Identificadas</h3>
+      ${oportunidadesHtml}
+    </div>
+
+    <!-- 3. INTELIGENCIA DE MERCADO -->
+    <div style="page-break-inside:avoid; margin-bottom:2rem;">
+      <h2 style="margin:0 0 1rem; font-size:1.5rem; color:#2563eb; border-bottom:3px solid #2563eb; padding-bottom:0.5rem;">
+        3️⃣ Inteligencia de Mercado
+      </h2>
+      
+      <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1.5rem;">
+        <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:1rem;">
+          ${kpiLine('📍 Área Analizada', provincia, '')}
+          ${kpiLine('💰 Consulta Especializada', rangoConsulta, '')}
+          ${kpiLine('🏥 Mix Privado', mixPrivado, '')}
+          ${kpiLine('📈 Crecimiento Sector', crecimientoSector, '')}
+          ${kpiLine('⏱️ DSO Aseguradoras', dsoPromedio, '')}
+        </div>
+        <div style="margin-top:1rem; padding:0.75rem; background:#fef3c7; border-radius:8px; font-size:0.75rem; color:#92400e;">
+          ⚠️ <strong>Nota:</strong> Indicadores orientativos para decisión estratégica. Validar con investigación de mercado local.
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. PALANCAS Y RIESGOS -->
+    <div style="page-break-inside:avoid;">
+      <h2 style="margin:0 0 1rem; font-size:1.5rem; color:#2563eb; border-bottom:3px solid #2563eb; padding-bottom:0.5rem;">
+        4️⃣ Palancas de Crecimiento y Riesgos
+      </h2>
+      
+      <div style="background:#f8fafc; border:2px solid #e5e7eb; border-radius:12px; padding:1.5rem; margin-bottom:1rem;">
+        <h3 style="margin:0 0 0.75rem; font-size:1rem; color:#111827;">🎯 Top 3 Palancas de Impacto</h3>
+        ${palancasHtml}
+      </div>
+
+      <div style="background:${d.necesidadMaxCaja < 0 ? '#fee2e2' : '#ecfdf5'}; border:2px solid ${d.necesidadMaxCaja < 0 ? '#dc2626' : '#059669'}; border-radius:12px; padding:1.5rem;">
+        <h3 style="margin:0 0 0.75rem; font-size:1rem; color:${d.necesidadMaxCaja < 0 ? '#dc2626' : '#059669'};">💧 Riesgo de Liquidez</h3>
+        <p style="margin:0; font-size:0.9rem; line-height:1.6;">
           ${d.necesidadMaxCaja < 0
-            ? `Atención a caja: en el peor mes faltarían ${eur(Math.abs(d.necesidadMaxCaja))}. Considera línea de crédito o escalado de gastos.`
-            : `Liquidez suficiente con supuestos actuales. Mantener colchón por si el DSO empeora.`}
-        </p>` : ``}
+            ? `<strong>⚠️ Atención:</strong> En el peor momento (${d.mesMinCaja}) faltarían ${eur(Math.abs(d.necesidadMaxCaja))}. Considera línea de crédito o escalado gradual de gastos.`
+            : `<strong>✅ Situación favorable:</strong> Liquidez suficiente con los supuestos actuales. Mantén colchón de seguridad por si el DSO de aseguradoras empeora.`}
+        </p>
+      </div>
     </div>
+
+    <!-- FOOTER -->
+    <div style="margin-top:3rem; padding-top:1.5rem; border-top:2px solid #e5e7eb; text-align:center; color:#6b7280; font-size:0.75rem;">
+      <p style="margin:0;">Generado con OptimClinic - Planificación Financiera y Análisis de Mercado</p>
+      <p style="margin:0.25rem 0 0;">${fecha}</p>
+    </div>
+
   </div>`;
 
-  // Pintar vista previa
+  // Mostrar vista previa
   document.getElementById('reportContent').innerHTML = html;
   document.getElementById('reportPreview').style.display = 'block';
   setTimeout(()=>document.getElementById('reportPreview').scrollIntoView({behavior:'smooth', block:'start'}), 200);
