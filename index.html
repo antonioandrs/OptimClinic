@@ -690,7 +690,16 @@
               <p>Documento específico para solicitudes de financiación.</p>
               <button class="btn btn-primary" onclick="generateBankDossier()">🏦 Generar Dossier</button>
             </div>
-          </div>
+
+<!-- NUEVO: Informe Integral (TOP) -->
+<div class="analysis-card">
+  <h3 class="analysis-title">🏆 Informe Integral (TOP)</h3>
+  <p>Integra Finanzas + Competidores + Mercado en un único documento con gráficos y conclusiones.</p>
+  <div class="form-row">
+    <button class="btn btn-primary" onclick="generateMasterReport()">🧠 Generar Informe Integral</button>
+    <button class="btn btn-secondary" onclick="exportMasterReportPDF()">🖨️ Exportar PDF</button>
+  </div>
+</div>
 
           <div class="card" style="margin: 2rem 0;">
             <div class="card-header">
@@ -1474,11 +1483,13 @@ async function analyzeCompetitors() {
       });
 
       const analysis = await res.json();
-      if (analysis.error) console.warn('Usando análisis base:', analysis.error);
+compAnalysis = analysis && !analysis.error ? analysis : null;   // <- guarda para el Informe Integral
+if (analysis.error) console.warn('Usando análisis base:', analysis.error);
 
-      renderAnalysisResults(analysis);
-      getEl('competitorResults').style.display = 'block';
-      setTimeout(() => getEl('competitorResults').scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+renderAnalysisResults(analysis);
+getEl('competitorResults').style.display = 'block';
+setTimeout(() => getEl('competitorResults').scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+
     } catch (err) {
       console.error('Error en análisis:', err);
       alert('Error al generar análisis: ' + err.message);
@@ -1718,6 +1729,198 @@ function generateAISummary(){
 // Evento del botón
 document.getElementById('aiAnalyze')?.addEventListener('click', generateAISummary);
 
+
+/* ===================== MASTER REPORT (FINANZAS + COMPETIDORES + MERCADO) ===================== */
+var compAnalysis = null; // se setea tras analizar competidores
+
+function chartImgOrNull(chartObj){
+  try { return (chartObj && typeof chartObj.toBase64Image === 'function') ? chartObj.toBase64Image() : ''; }
+  catch(e){ return ''; }
+}
+
+function kpiLine(label, value, note){
+  return `<div style="display:flex; justify-content:space-between; gap:1rem; padding:.5rem 0; border-bottom:1px solid #e5e7eb;">
+            <div style="font-weight:600; color:#111827;">${label}</div>
+            <div style="text-align:right;">
+              <div style="font-weight:800; color:#111827;">${value}</div>
+              ${note ? `<div style="font-size:.8rem; color:#6b7280;">${note}</div>` : ``}
+            </div>
+          </div>`;
+}
+
+function safePct(n){
+  return (isFinite(n) ? n.toFixed(1) + '%' : '—');
+}
+
+function generateMasterReport(){
+  // --- Entradas de las tres pestañas ---
+  const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
+  const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
+  const fecha = new Date().toLocaleDateString('es-ES');
+
+  // Finanzas
+  const d = lastData;
+  const beTxt  = d?.beMes ? `Mes ${d.beMes} (${d.monthLabels[d.beMes-1]})` : 'No alcanzado';
+  const roiTxt = d ? safePct(d.roiFinal) : '—';
+  const irrTxt = (d && isFinite(d.irrAnual)) ? (d.irrAnual*100).toFixed(1) + '%' : '—';
+  const npvTxt = d ? eur(d.npvVal) : '—';
+  const cajaTxt = d ? eur(d.necesidadMaxCaja) + (d.mesMinCaja ? ` — Tensión: ${d.mesMinCaja}` : '') : '—';
+
+  // Gráficos (imágenes base64)
+  const imgPnl    = chartImgOrNull(charts.pnl);
+  const imgCash   = chartImgOrNull(charts.cash);
+  const imgTornado= chartImgOrNull(charts.tornado);
+
+  // Palancas
+  let palancasHtml = '<em>Ejecuta primero el análisis financiero para ver palancas...</em>';
+  if (d) {
+    const pal = topPalancas(d);
+    palancasHtml = `
+      <h4 style="margin:.75rem 0 .25rem; color:#111827;">Top 3 palancas</h4>
+      ${pal.lista}
+      <h4 style="margin:1rem 0 .25rem; color:#111827;">Recomendaciones</h4>
+      ${pal.recs}
+    `;
+  }
+
+  // Competidores
+  const comp = compAnalysis || null;
+  const compResumen = comp?.resumenEjecutivo || 'Ejecuta el análisis de competidores para completar este apartado.';
+  const compPrecio = comp?.rangoPrecios ? {
+    min: comp.rangoPrecios.minimo ?? '—',
+    avg: comp.rangoPrecios.promedio ?? '—',
+    max: comp.rangoPrecios.maximo ?? '—'
+  } : null;
+  const compN = Array.isArray(competitors) ? competitors.length : (comp?.total || '—');
+  const compPos = comp?.posicionamientoRecomendado || '';
+
+  // Mercado
+  const provincia = document.getElementById('provinciaActual')?.textContent || (document.getElementById('provincia')?.value || '—');
+  const rangoConsulta = document.getElementById('rangoConsulta')?.textContent || '—';
+  const mixPrivado = document.getElementById('mixPrivado')?.textContent || '—';
+  const crecimientoSector = document.getElementById('crecimientoSector')?.textContent || '—';
+  const dsoPromedio = document.getElementById('dsoPromedio')?.textContent || '—';
+
+  // Cabecera visual (logo si existe en la cabecera)
+  const logoSrc = document.querySelector('.logo img')?.src || '';
+
+  // --- Construcción del informe ---
+  const html = `
+  <div style="font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827;">
+    <!-- Portada -->
+    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.25rem;">
+      ${logoSrc ? `<img src="${logoSrc}" alt="Logo" style="width:72px; height:72px; border-radius:12px; object-fit:cover;">` : ``}
+      <div>
+        <h2 style="margin:0; font-size:1.5rem;">Informe Integral (TOP)</h2>
+        <div style="color:#6b7280; font-size:.9rem;">${empresa} • ${fecha}</div>
+        <div style="color:#6b7280; font-size:.9rem;">Responsable: ${responsable}</div>
+      </div>
+    </div>
+
+    <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:1rem; margin-bottom:1rem;">
+      <strong>Resumen Ejecutivo</strong>
+      <p style="margin:.5rem 0 0;">
+        ${d ? d.analisisTexto : 'Ejecuta primero la pestaña de Planificación Financiera.'}
+      </p>
+    </div>
+
+    <!-- 1. Resultados Financieros -->
+    <h3 style="margin:1rem 0 .5rem;">1) Resultados Financieros</h3>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap:1rem; border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+      ${kpiLine('Inversión inicial (CAPEX)', eur(Number(document.getElementById('capex')?.value || 0)))}
+      ${kpiLine('Horizonte', (document.getElementById('meses')?.value || '—') + ' meses')}
+      ${kpiLine('Punto de equilibrio', beTxt)}
+      ${kpiLine('ROI proyectado', roiTxt)}
+      ${kpiLine('VAN (NPV)', npvTxt)}
+      ${kpiLine('TIR anual', irrTxt)}
+      ${kpiLine('Necesidad máx. de caja', cajaTxt)}
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr; gap:1rem; margin:1rem 0;">
+      ${imgPnl ? `
+        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+          <div style="font-weight:600; margin-bottom:.5rem;">P&L Operativo</div>
+          <img src="${imgPnl}" alt="P&L" style="width:100%; height:auto; border-radius:8px;">
+        </div>` : ``}
+      ${imgCash ? `
+        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+          <div style="font-weight:600; margin-bottom:.5rem;">Flujo de Caja Acumulado</div>
+          <img src="${imgCash}" alt="Cash" style="width:100%; height:auto; border-radius:8px;">
+        </div>` : ``}
+      ${imgTornado ? `
+        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+          <div style="font-weight:600; margin-bottom:.5rem;">Análisis de Sensibilidad (Tornado)</div>
+          <img src="${imgTornado}" alt="Tornado" style="width:100%; height:auto; border-radius:8px;">
+        </div>` : ``}
+    </div>
+
+    <!-- 2. Competidores y posicionamiento -->
+    <h3 style="margin:1rem 0 .5rem;">2) Competidores y Posicionamiento</h3>
+    <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+      <p style="margin:0 0 .5rem;">${compResumen}</p>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:.5rem;">
+        ${kpiLine('Competidores analizados', compN)}
+        ${kpiLine('Precio medio mercado', compPrecio ? `€${compPrecio.avg}` : '—', compPrecio ? `Rango: €${compPrecio.min} - €${compPrecio.max}` : '')}
+      </div>
+      ${compPos ? `<div style="margin-top:.75rem; background:#ecfdf5; border:1px solid #059669; padding:1rem; border-radius:8px;">
+        <strong>Posicionamiento recomendado</strong>
+        <p style="margin:.5rem 0 0;">${compPos}</p>
+      </div>` : ``}
+    </div>
+
+    <!-- 3. Inteligencia de Mercado -->
+    <h3 style="margin:1rem 0 .5rem;">3) Inteligencia de Mercado</h3>
+    <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+      <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:.5rem;">
+        ${kpiLine('Área analizada', provincia)}
+        ${kpiLine('Consulta especializada (rango)', rangoConsulta)}
+        ${kpiLine('Mix privado estimado', mixPrivado)}
+        ${kpiLine('Crecimiento sector', crecimientoSector)}
+        ${kpiLine('DSO aseguradoras', dsoPromedio)}
+      </div>
+      <div style="margin-top:.75rem; font-size:.85rem; color:#6b7280;">* Indicadores orientativos para decisión estratégica. Validar con estudio local.</div>
+    </div>
+
+    <!-- 4. Palancas y riesgos -->
+    <h3 style="margin:1rem 0 .5rem;">4) Palancas y Riesgos</h3>
+    <div style="border:1px solid #e5e7eb; border-radius:12px; padding:1rem;">
+      ${palancasHtml}
+      ${d ? `
+        <h4 style="margin:1rem 0 .25rem; color:#111827;">Riesgo de liquidez</h4>
+        <p style="margin:.25rem 0;">
+          ${d.necesidadMaxCaja < 0
+            ? `Atención a caja: en el peor mes faltarían ${eur(Math.abs(d.necesidadMaxCaja))}. Considera línea de crédito o escalado de gastos.`
+            : `Liquidez suficiente con supuestos actuales. Mantener colchón por si el DSO empeora.`}
+        </p>` : ``}
+    </div>
+  </div>`;
+
+  // Pintar vista previa
+  document.getElementById('reportContent').innerHTML = html;
+  document.getElementById('reportPreview').style.display = 'block';
+  setTimeout(()=>document.getElementById('reportPreview').scrollIntoView({behavior:'smooth', block:'start'}), 200);
+}
+
+function exportMasterReportPDF(){
+  const content = document.getElementById('reportContent')?.innerHTML || '';
+  if(!content){ alert('Genera primero el Informe Integral.'); return; }
+
+  const css = `
+  @page { size: A4; margin: 14mm; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; }
+  img { max-width: 100%; height: auto; }
+  h2, h3, h4 { break-after: avoid; }
+  .page-break { page-break-before: always; }
+  `;
+
+  const w = window.open('', '_blank');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Informe Integral</title><style>${css}</style></head><body>${content}</body></html>`);
+  w.document.close();
+  w.focus();
+  // esperar a que carguen imágenes base64 antes de imprimir
+  setTimeout(() => { w.print(); w.close(); }, 500);
+}
 
     /* ===================== REPORTS ===================== */
     function generateExecutiveReport() {
