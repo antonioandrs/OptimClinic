@@ -9,15 +9,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnClose= document.getElementById("btnClose");
   if (!btnOpen || !modal || !ta) return;
 
-  // Helpers
-  const fEUR = (n) => new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"}).format(n ?? 0);
-  const pct1 = (x) => (x==null ? "–" : `${(x*100).toFixed(1)}%`);
-  const safe = (s) => (s ?? "").toString().trim();
+  // ---------- Helpers ----------
+  const fEUR = (n) => new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"}).format(Number.isFinite(n)?n:0);
+  // % “smart”: si viene ya en % (abs>1.5), no volver a multiplicar x100
+  const pct1 = (x) => {
+    if (x==null || isNaN(x)) return "–";
+    const v = Math.abs(x) > 1.5 ? x : x*100;
+    return `${v.toFixed(1)}%`;
+  };
+  const safe  = (s) => (s ?? "").toString().trim();
   const round = (x) => Math.round((x ?? 0));
 
-  // IA autogenerada si el usuario no pulsó "Analizar con IA"
-  function iaFromLastData(d){
-    const beMes   = d.mesBE ?? d.breakEvenMonth ?? null;           // <— ajusta si tu key es distinta
+  // Buscar texto de una tarjeta por su título visible
+  function scrapeSectionByHeading(headingText){
+    const all = Array.from(document.querySelectorAll("h3,h2,h4"));
+    const h = all.find(el => el.textContent.trim().toLowerCase().includes(headingText.toLowerCase()));
+    if (!h) return "";
+    // coge la tarjeta contenedora más cercana
+    const card = h.closest(".card, .analysis-card, section, div");
+    if (!card) return h.parentElement?.innerText || "";
+    // evita capturar botones/inputs
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll("button, input, select, textarea").forEach(n=>n.remove());
+    return clone.innerText
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  // Genera IA a partir de lastData o usa fallbacks
+  function buildIAFromData(d){
+    const beMes   = d.mesBE ?? d.breakEvenMonth ?? null;
     const beHit   = Number.isFinite(beMes);
     const roi     = d.roiFinal ?? d.roi ?? null;
     const tir     = d.tirAnual ?? d.tir ?? null;
@@ -31,6 +52,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const resumenTIR  = tir!=null ? `TIR anual estimada: ${pct1(tir)}${tir<0?' (negativa)':''}.` : "";
     const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
     const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
+
+    // Recomendaciones de la UI si existen
+    const recsUI = scrapeSectionByHeading("Recomendaciones") || scrapeSectionByHeading("Recomendaciones prácticas");
+    // Guía para no financieros
+    const guiaUI = scrapeSectionByHeading("Guía para no financieros");
 
     return {
       resumen_general: [resumenBE, resumenROI, resumenTIR, resumenVAN, resumenCaja].filter(Boolean).join(" "),
@@ -46,8 +72,55 @@ document.addEventListener("DOMContentLoaded", () => {
       escenario_pes: "Plan defensivo si cae demanda o suben fijos.",
       sensibilidades: "Precio y ocupación son las palancas de mayor impacto.",
       equipo_medico: "Top 3 concentran la mayor parte del margen.",
-      recomendaciones_financieras: "- Revisar tarifas en líneas premium\n- Optimizar agenda en horas pico\n- Ajustar compras a rotación\n- KPI semanales por profesional",
-      resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida."
+      recomendaciones_financieras: safe(recsUI) || "- Revisar tarifas (premiumización)\n- Optimizar agenda en horas pico\n- Ajustar compras a rotación\n- KPI semanales por profesional",
+      resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida.",
+      guia_no_financieros: safe(guiaUI) || `• Break-even: cobros = pagos.\n• ROI: retorno sobre inversión inicial.\n• VAN: valor hoy de flujos futuros.\n• TIR: “interés” anual equivalente.\n• EBITDA: resultado operativo antes de amortizaciones e intereses.`
+    };
+  }
+
+  // Escenarios si no existen (Base = real; Opt/Pes ±10% ingresos, ±2% costes)
+  function ensureScenarios(d){
+    const esc = (window.OPTICLINIC_FIN?.escenarios || d.escenarios || {});
+    if (esc.base && esc.opt && esc.pes) return esc;
+
+    const ingresos = (d.ingresos||[]).reduce((a,b)=>a+b,0);
+    const cVar     = (d.cVariables||[]).reduce((a,b)=>a+b,0);
+    const cFijos   = (d.cfMensual||[]).reduce((a,b)=>a+b,0);
+    const costes   = cVar + cFijos;
+    const margen   = ingresos - costes;
+    const mPct     = ingresos>0 ? margen/ingresos : 0;
+
+    const make = (ingFactor, costFactor) => {
+      const ing = ingresos * ingFactor;
+      const cst = (cVar * (ingFactor)) + (cFijos * costFactor); // si sube demanda, suben variables; fijos casi constantes
+      const mar = ing - cst;
+      return { ingresos: ing, costes: cst, margen: mar, margenPct: ing>0 ? mar/ing : 0 };
+    };
+
+    return {
+      base: { ingresos, costes, margen, margenPct: mPct },
+      opt:  make(1.10, 1.02),
+      pes:  make(0.90, 0.98)
+    };
+  }
+
+  // Sensibilidades si no existen (Precio ±5% afecta ingresos; Ocupación ±10% afecta ingresos y variables)
+  function ensureSens(d){
+    const sens = (window.OPTICLINIC_FIN?.sens || {});
+    if (sens.precio_up5!=null && sens.precio_dn5!=null && sens.occ_up10!=null && sens.occ_dn10!=null) return sens;
+
+    const ingresos = (d.ingresos||[]).reduce((a,b)=>a+b,0);
+    const cVar     = (d.cVariables||[]).reduce((a,b)=>a+b,0);
+    const cFijos   = (d.cfMensual||[]).reduce((a,b)=>a+b,0);
+
+    const precio = (f) => (ingresos*f) - (cVar + cFijos);
+    const occ    = (f) => (ingresos*f) - (cVar*f + cFijos);
+
+    return {
+      precio_up5: precio(1.05),
+      precio_dn5: precio(0.95),
+      occ_up10:   occ(1.10),
+      occ_dn10:   occ(0.90)
     };
   }
 
@@ -63,8 +136,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const costesMes_JSON   = JSON.stringify((d.cVariables||[]).map((v,i)=> round(v + (d.cfMensual?.[i]||0))));
     const margenMes_JSON   = JSON.stringify((d.ebitda || []).map(round));
 
-    // IA (si no hay window.ANALISIS_FIN_IA, autogenera a partir de lastData)
-    const ia = window.ANALISIS_FIN_IA || iaFromLastData(d);
+    // IA (si no hay window.ANALISIS_FIN_IA, autogenera desde UI y datos)
+    const ia = window.ANALISIS_FIN_IA || buildIAFromData(d);
 
     // Agregados
     const ingresosTotales = (d.ingresos||[]).reduce((a,b)=>a+b,0);
@@ -77,19 +150,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const tirAnual  = d.tirAnual ?? d.tir ?? null;
     const van       = d.van ?? d.npv ?? null;
 
-    // Sensibilidades (si existen)
-    const sens = {
-      precio_up5:  window.OPTICLINIC_FIN?.sens?.precio_up5  ?? null,
-      precio_dn5:  window.OPTICLINIC_FIN?.sens?.precio_dn5  ?? null,
-      occ_up10:    window.OPTICLINIC_FIN?.sens?.occ_up10    ?? null,
-      occ_dn10:    window.OPTICLINIC_FIN?.sens?.occ_dn10    ?? null
-    };
-
-    // Escenarios (desde window.OPTICLINIC_FIN.escenarios o lastData.escenarios)
-    const esc   = window.OPTICLINIC_FIN?.escenarios || d.escenarios || {};
-    const escBP = esc.base && esc.base.ingresos>0 ? esc.base.margen/esc.base.ingresos : null;
-    const escOP = esc.opt  && esc.opt.ingresos>0  ? esc.opt.margen/esc.opt.ingresos   : null;
-    const escPP = esc.pes  && esc.pes.ingresos>0  ? esc.pes.margen/esc.pes.ingresos   : null;
+    // Escenarios y sensibilidades (auto si faltan)
+    const esc = ensureScenarios(d);
+    const sens = ensureSens(d);
 
     // Otros inputs visibles
     const clinica       = document.getElementById("empresaNombre")?.value || "Clínica Ejemplo";
@@ -122,7 +185,7 @@ Puntos clave:
 - Ingresos: ${fEUR(ingresosTotales)} | Costes: ${fEUR(costesTotales)} | Margen: ${fEUR(margenTotal)} (${pct1(margenPct)})
 - Ticket medio: ${fEUR(ticketMedio)} | Módulos: —
 - Comentario crítico: —
-- ROI proyectado: ${roiFinal!=null ? ( (roiFinal*100).toFixed(1)+'%' ) : '—'} | TIR anual: ${tirAnual!=null ? ( (tirAnual*100).toFixed(1)+'%' ) : '—'} | VAN: ${van!=null ? fEUR(van) : '—'}
+- ROI proyectado: ${roiFinal!=null ? pct1(roiFinal) : '—'} | TIR anual: ${tirAnual!=null ? pct1(tirAnual) : '—'} | VAN: ${van!=null ? fEUR(van) : '—'}
 
 ---
 # Contexto y objetivos
@@ -159,19 +222,19 @@ Comentario: ${safe(ia.punto_equilibrio)}
 # Escenarios (Base / Optimista / Pesimista)
 | Escenario | Ingresos | Costes | Margen | % Margen | Nota |
 |---|---:|---:|---:|---:|---|
-| Base      | ${esc.base?.ingresos!=null ? fEUR(esc.base.ingresos) : "—"} | ${esc.base?.costes!=null ? fEUR(esc.base.costes) : "—"} | ${esc.base?.margen!=null ? fEUR(esc.base.margen) : "—"} | ${esc.base ? pct1(escBP) : "—"} | ${safe(ia.escenario_base)} |
-| Optimista | ${esc.opt?.ingresos!=null ? fEUR(esc.opt.ingresos)   : "—"} | ${esc.opt?.costes!=null ? fEUR(esc.opt.costes)   : "—"} | ${esc.opt?.margen!=null ? fEUR(esc.opt.margen)   : "—"} | ${esc.opt  ? pct1(escOP) : "—"} | ${safe(ia.escenario_opt)}  |
-| Pesimista | ${esc.pes?.ingresos!=null ? fEUR(esc.pes.ingresos)   : "—"} | ${esc.pes?.costes!=null ? fEUR(esc.pes.costes)   : "—"} | ${esc.pes?.margen!=null ? fEUR(esc.pes.margen)   : "—"} | ${esc.pes  ? pct1(escPP) : "—"} | ${safe(ia.escenario_pes)}  |
+| Base      | ${fEUR(esc.base.ingresos)} | ${fEUR(esc.base.costes)} | ${fEUR(esc.base.margen)} | ${pct1(esc.base.margenPct)} | ${safe(ia.escenario_base)} |
+| Optimista | ${fEUR(esc.opt.ingresos)}  | ${fEUR(esc.opt.costes)}  | ${fEUR(esc.opt.margen)}  | ${pct1(esc.opt.margenPct)}  | ${safe(ia.escenario_opt)}  |
+| Pesimista | ${fEUR(esc.pes.ingresos)}  | ${fEUR(esc.pes.costes)}  | ${fEUR(esc.pes.margen)}  | ${pct1(esc.pes.margenPct)}  | ${safe(ia.escenario_pes)}  |
 
 ---
 # Sensibilidades (precio y ocupación)
 Instrucciones de gráfico: barras con 4 columnas (Precio +5%, Precio −5%, Ocupación +10%, Ocupación −10%).
 • Muestra la cifra de margen (en €) encima de cada barra. Formato es-ES.
 Resultados:
-- +5% precio ⇒ margen: ${sens.precio_up5!=null ? fEUR(sens.precio_up5) : "–"}
-- −5% precio ⇒ margen: ${sens.precio_dn5!=null ? fEUR(sens.precio_dn5) : "–"}
-- +10% ocupación ⇒ margen: ${sens.occ_up10!=null ? fEUR(sens.occ_up10) : "–"}
-- −10% ocupación ⇒ margen: ${sens.occ_dn10!=null ? fEUR(sens.occ_dn10) : "–"}
+- +5% precio ⇒ margen: ${fEUR(sens.precio_up5)}
+- −5% precio ⇒ margen: ${fEUR(sens.precio_dn5)}
+- +10% ocupación ⇒ margen: ${fEUR(sens.occ_up10)}
+- −10% ocupación ⇒ margen: ${fEUR(sens.occ_dn10)}
 Insight: ${safe(ia.sensibilidades)}
 
 ---
@@ -185,6 +248,10 @@ Comentario: ${safe(ia.equipo_medico)}
 ---
 # Recomendaciones financieras
 ${safe(ia.recomendaciones_financieras)}
+
+---
+# Guía para no financieros
+${safe(ia.guia_no_financieros)}
 
 ---
 # Resumen visual
@@ -207,7 +274,7 @@ Notas: ${safe(ia.resumen_visual)}
 `.trim();
   }
 
-  // Eventos UI
+  // ---------- Eventos UI ----------
   btnOpen.addEventListener("click", () => {
     const prompt = buildPromptFromLastData();
     if (!prompt) return;
