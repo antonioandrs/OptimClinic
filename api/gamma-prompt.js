@@ -20,15 +20,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const safe  = (s) => (s ?? "").toString().trim();
   const round = (x) => Math.round((x ?? 0));
 
-  // === BRANDING (ajustable)
+  // === BRANDING ===
   const BRAND = {
     primary: "#2563eb",
     accent:  "#0891b2",
-    font:    "Inter, ui-sans-serif, system-ui",
+    font:    "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto",
     logoUrl: "https://i.imgur.com/eRKd3Hp.jpeg"
   };
 
-  // Buscar texto de una tarjeta por su título visible
+  // Extrae texto de una tarjeta por su título visible
   function scrapeSectionByHeading(headingText){
     const all = Array.from(document.querySelectorAll("h3,h2,h4"));
     const h = all.find(el => el.textContent.trim().toLowerCase().includes(headingText.toLowerCase()));
@@ -39,117 +39,94 @@ document.addEventListener("DOMContentLoaded", () => {
     return clone.innerText.replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  // IA/narrativa a partir de lastData y de la propia UI
-  // === Reemplaza TODO este bloque en tu archivo ===
-function buildIAFromData(d){
-  const fEUR = (n) => new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"}).format(Number.isFinite(n)?n:0);
-  const pct1 = (x) => {
-    if (x==null || isNaN(x)) return "–";
-    const v = Math.abs(x) > 1.5 ? x : x*100;
-    return `${v.toFixed(1)}%`;
-  };
-  const safe  = (s) => (s ?? "").toString().trim();
-
-  // 1) Detección robusta del BE (desde datos, UI o heurística)
-  function detectBEMonth(){
-    const candidates = [
-      d.mesBE, d.breakEvenMonth, d.break_even_month, d.beMes, d.breakEvenMes,
-      d.breakEven?.mes, d.breakEven?.month, d.kpis?.breakEvenMes, d.kpis?.beMes
-    ];
-    for (const v of candidates) {
-      if (v==null) continue;
-      if (typeof v === "number" && isFinite(v)) return { hit: true, mes: v };
-      if (typeof v === "string") {
-        // “Mes 8 / 12”, “8/12”, “mes 8”, etc.
-        let m = v.match(/mes\s*(\d{1,2})/i) || v.match(/(\d{1,2})\s*\/\s*\d{1,2}/);
-        if (!m) m = v.match(/\b(\d{1,2})\b/);
-        if (m) return { hit: true, mes: Number(m[1]) };
-        if (/no\s+alcanzad/i.test(v)) return { hit: false, mes: null };
+  // ===== IA / narrativa a partir de DATA + UI =====
+  function buildIAFromData(d){
+    // --- detección robusta de Break-even ---
+    function detectBEMonth(){
+      // 1) Claves habituales en datos
+      const candidates = [
+        d.mesBE, d.breakEvenMonth, d.break_even_month, d.beMes, d.breakEvenMes,
+        d.breakEven?.mes, d.breakEven?.month, d.kpis?.breakEvenMes, d.kpis?.beMes
+      ];
+      for (const v of candidates) {
+        if (typeof v === "number" && isFinite(v)) return { hit:true, mes:v };
+        if (typeof v === "string") {
+          let m = v.match(/mes\s*(\d{1,2})/i) || v.match(/(\d{1,2})\s*\/\s*\d{1,2}/);
+          if (!m) m = v.match(/\b(\d{1,2})\b/);
+          if (m) return { hit:true, mes:Number(m[1]) };
+          if (/no\s+alcanzad/i.test(v)) return { hit:false, mes:null };
+        }
       }
+      // 2) UI: banner “Proyecto viable / no viable … Break-even mes X”
+      const banner = Array.from(document.querySelectorAll("*"))
+        .find(el => /proyecto\s+viable|proyecto\s+no\s+viable/i.test(el.textContent||""));
+      if (banner) {
+        const txt = banner.closest(".card,div,section")?.innerText || banner.textContent || "";
+        const m = txt.match(/break-?even\s+mes\s+(\d{1,2})/i);
+        if (m) return { hit:true, mes:Number(m[1]) };
+        if (/no\s+viable|no\s+alcanzad/i.test(txt)) return { hit:false, mes:null };
+      }
+      // 3) UI: tile “Mes 8 / 12”
+      const tile = Array.from(document.querySelectorAll("*"))
+        .find(el => /break-?even/i.test(el.textContent||""));
+      if (tile) {
+        const txt = (tile.closest(".card,div,section")?.innerText || tile.textContent || "").trim();
+        const m1 = txt.match(/Mes\s*(\d{1,2})\s*\/\s*\d{1,2}/i);
+        if (m1) return { hit:true, mes:Number(m1[1]) };
+        if (/no\s+alcanzad/i.test(txt)) return { hit:false, mes:null };
+      }
+      // 4) Heurística: si ROI/VAN positivos, busca primer mes con acumulado EBITDA ≥ 0
+      const roi = d.roiFinal ?? d.roi;
+      const van = d.van ?? d.npv;
+      if ((roi!=null && roi>0) || (van!=null && van>0)) {
+        const serie = (d.ebitda||[]).map(x=>+x||0);
+        let acc=0;
+        for (let i=0;i<serie.length;i++){ acc+=serie[i]; if (acc>=0) return {hit:true, mes:i+1}; }
+        if (serie.length) return {hit:true, mes:serie.length};
+      }
+      return { hit:false, mes:null };
     }
-    // Leer de la UI (“Break-even”, “Mes 8 / 12”, “No alcanzado”)
-    const node = Array.from(document.querySelectorAll("*"))
-      .find(el => /break-?even/i.test(el.textContent || ""));
-    if (node) {
-      const txt = (node.closest(".card,div,section")?.innerText || node.textContent || "").trim();
-      const m1 = txt.match(/Mes\s*(\d{1,2})/i) || txt.match(/(\d{1,2})\s*\/\s*\d{1,2}/);
-      if (m1) return { hit: true, mes: Number(m1[1]) };
-      if (/No\s+alcanzad/i.test(txt)) return { hit: false, mes: null };
-    }
-    // Heurística: si ROI o VAN positivos, estimar por acumulado del margen (EBITDA)
-    const roi = d.roiFinal ?? d.roi;
-    const van = d.van ?? d.npv;
-    if ((roi!=null && roi>0) || (van!=null && van>0)) {
-      const serie = (d.ebitda || []).map(x => +x || 0);
-      let acc = 0;
-      for (let i=0;i<serie.length;i++){ acc += serie[i]; if (acc >= 0) return { hit:true, mes:i+1 }; }
-      if (serie.length) return { hit:true, mes: serie.length };
-    }
-    return { hit:false, mes:null };
+
+    const { hit: beHit, mes: beMes } = detectBEMonth();
+
+    const roi     = d.roiFinal ?? d.roi ?? null;
+    const tir     = d.tirAnual ?? d.tir ?? null;
+    const van     = d.van ?? d.npv ?? null;
+    const cajaMax = d.necesidadMaxCaja ?? d.cashNeedMax ?? null;
+    const mesTenso= d.mesMasTenso ?? d.worstMonth ?? null;
+
+    const resumenBE   = beHit
+      ? `Se alcanza el punto de equilibrio en el mes ${beMes}.`
+      : `No se alcanza el punto de equilibrio (break-even) en el horizonte modelado.`;
+    const resumenROI  = roi!=null ? `ROI proyectado: ${pct1(roi)}${roi<0?' (bajo)':''}.` : "";
+    const resumenTIR  = tir!=null ? `TIR anual estimada: ${pct1(tir)}${tir<0?' (negativa)':''}.` : "";
+    const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
+    const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
+
+    const recsUI = scrapeSectionByHeading("Recomendaciones") || scrapeSectionByHeading("Recomendaciones prácticas");
+    const guiaUI = scrapeSectionByHeading("Guía para no financieros");
+
+    return {
+      resumen_general: [resumenBE, resumenROI, resumenTIR, resumenVAN, resumenCaja].filter(Boolean).join(" "),
+      contexto: "Se analizan datos reales y proyecciones configuradas en Planificación Financiera.",
+      ingresos: "Impulsados por volumen y ticket medio.",
+      costes: "Fijos + variables; vigilar consumibles y horas.",
+      margen: "Condicionado por precio efectivo y coste variable.",
+      ticket: "Derivado del mix de servicios y aseguradoras.",
+      tendencias_mensuales: "Estacionalidad visible en las series mensuales.",
+      punto_equilibrio: resumenBE,
+      escenario_base: "Mantener disciplina de costes y ocupación estable.",
+      escenario_opt: "Upside con +precio/+ocupación y mejor mix.",
+      escenario_pes: "Plan defensivo si cae demanda o suben fijos.",
+      sensibilidades: "Precio y ocupación son las palancas de mayor impacto.",
+      equipo_medico: "Top 3 concentran la mayor parte del margen.",
+      recomendaciones_financieras: safe(recsUI) || "- Revisar tarifas (premiumización)\n- Optimizar agenda en horas pico\n- Ajustar compras a rotación\n- KPI semanales por profesional",
+      resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida.",
+      guia_no_financieros: safe(guiaUI) || `• Break-even: cobros = pagos.\n• ROI: retorno sobre inversión.\n• VAN: valor hoy de flujos futuros.\n• TIR: “interés” anual equivalente.\n• EBITDA: resultado operativo antes de amortizaciones e intereses.`
+    };
   }
 
-  const { hit: beHit, mes: beMes } = detectBEMonth();
-
-  // Señales numéricas
-  const roi     = d.roiFinal ?? d.roi ?? null;
-  const tir     = d.tirAnual ?? d.tir ?? null;
-  const van     = d.van ?? d.npv ?? null;
-  const cajaMax = d.necesidadMaxCaja ?? d.cashNeedMax ?? null;
-  const mesTenso= d.mesMasTenso ?? d.worstMonth ?? null;
-
-  // Narrativa consistente con la detección de BE
-  const resumenBE   = beHit
-    ? `Se alcanza el punto de equilibrio en el mes ${beMes}.`
-    : `No se alcanza el punto de equilibrio (break-even) en el horizonte modelado.`;
-
-  const resumenROI  = roi!=null ? `ROI proyectado: ${pct1(roi)}${roi<0?' (bajo)':''}.` : "";
-  const resumenTIR  = tir!=null ? `TIR anual estimada: ${pct1(tir)}${tir<0?' (negativa)':''}.` : "";
-  const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
-  const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
-
-  // Extraer textos útiles de tu UI (si existen)
-  const recsUI = (function(){
-    const all = Array.from(document.querySelectorAll("h2,h3,h4"));
-    const h = all.find(el => /recomendaciones/i.test(el.textContent));
-    if (!h) return "";
-    const card = h.closest(".card, .analysis-card, section, div") || h.parentElement;
-    const clone = card.cloneNode(true);
-    clone.querySelectorAll("button,input,select,textarea").forEach(n=>n.remove());
-    return clone.innerText.replace(/\n{3,}/g,"\n\n").trim();
-  })();
-
-  const guiaUI = (function(){
-    const all = Array.from(document.querySelectorAll("h2,h3,h4"));
-    const h = all.find(el => /Guía\s*para\s*no\s*financieros/i.test(el.textContent));
-    if (!h) return "";
-    const card = h.closest(".card, .analysis-card, section, div") || h.parentElement;
-    const clone = card.cloneNode(true);
-    clone.querySelectorAll("button,input,select,textarea").forEach(n=>n.remove());
-    return clone.innerText.replace(/\n{3,}/g,"\n\n").trim();
-  })();
-
-  return {
-    resumen_general: [resumenBE, resumenROI, resumenTIR, resumenVAN, resumenCaja].filter(Boolean).join(" "),
-    contexto: "Se analizan datos reales y proyecciones configuradas en Planificación Financiera.",
-    ingresos: "Impulsados por volumen y ticket medio.",
-    costes: "Fijos + variables; vigilar consumibles y horas.",
-    margen: "Condicionado por precio efectivo y coste variable.",
-    ticket: "Derivado del mix de servicios y aseguradoras.",
-    tendencias_mensuales: "Estacionalidad visible en las series mensuales.",
-    punto_equilibrio: resumenBE,
-    escenario_base: "Mantener disciplina de costes y ocupación estable.",
-    escenario_opt: "Upside con +precio/+ocupación y mejor mix.",
-    escenario_pes: "Plan defensivo si cae demanda o suben fijos.",
-    sensibilidades: "Precio y ocupación son las palancas de mayor impacto.",
-    equipo_medico: "Top 3 concentran la mayor parte del margen.",
-    recomendaciones_financieras: safe(recsUI) || "- Revisar tarifas (premiumización)\n- Optimizar agenda en horas pico\n- Ajustar compras a rotación\n- KPI semanales por profesional",
-    resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida.",
-    guia_no_financieros: safe(guiaUI) || `• Break-even: cobros = pagos.\n• ROI: retorno sobre inversión.\n• VAN: valor hoy de flujos futuros.\n• TIR: “interés” anual equivalente.\n• EBITDA: resultado operativo antes de amortizaciones e intereses.`
-  };
-}
-
-
-  // Escenarios si no existen (Base = real; Opt/Pes ±10% ingresos, ±2% costes fijos)
+  // Escenarios si no existen (Base = real; Opt/Pes ±10% ingresos, ±2% fijos)
   function ensureScenarios(d){
     const esc = (window.OPTICLINIC_FIN?.escenarios || d.escenarios || {});
     if (esc.base && esc.opt && esc.pes) return esc;
@@ -222,7 +199,7 @@ function buildIAFromData(d){
     const van       = d.van ?? d.npv ?? null;
 
     // Escenarios y sensibilidades (auto si faltan)
-    const esc = ensureScenarios(d);
+    const esc  = ensureScenarios(d);
     const sens = ensureSens(d);
 
     // Inputs de UI
@@ -240,19 +217,39 @@ function buildIAFromData(d){
       `| ${safe(m.nombre)} | ${m.modulos??0} | ${fEUR(m.ticket??0)} | ${fEUR(m.margen??0)} | ${safe(m.insight)||"-"} |`
     ).join("\n") || "| – | – | – | – | – |";
 
+    // ---------- TEMPLATE ----------
     return `
 # OptiClinic – Informe Financiero Integral
 Cliente: ${clinica}
 Fecha: ${now}
 Idioma: Español (es-ES)
 Formato: Presentación 16:9, estilo consultoría (titulares claros → 1 idea por slide, tablas legibles, bullets cortos).
-No inventes datos. No insertes enlaces externos ni créditos en el contenido.
-Usa euros con formato es-ES (ej.: 1.113.900 €). Para porcentajes usa 1 decimal (ej.: 31,9%). No uses $.
+
+No inventes datos ni reinterpretes los KPIs del bloque JSON “Datos (no mostrar)”.
+En gráficos y ejes **usa siempre euros (símbolo € y formato es-ES)**.
+Si tu librería dibuja $ por defecto, **sustituye las etiquetas por texto manual en €**.
+**No añadas enlaces externos ni créditos en el contenido.**
 
 Branding:
 • Primario ${BRAND.primary}, acento ${BRAND.accent}, tipografía ${BRAND.font}.
 • Fondo blanco, iconografía sencilla, alto contraste para legibilidad.
 • Coloca el logo corporativo en la esquina superior derecha de la portada (logo: ${BRAND.logoUrl}).
+
+---
+**Datos (no mostrar, solo usar)**
+
+\`\`\`json
+{
+  "be_month": ${JSON.stringify(d.mesBE ?? d.breakEvenMonth ?? null)},
+  "roi_final_pct": ${JSON.stringify(roiFinal)},
+  "tir_anual_pct": ${JSON.stringify(tirAnual)},
+  "van_eur": ${JSON.stringify(van)},
+  "ingresos_totales": ${JSON.stringify(ingresosTotales)},
+  "costes_totales": ${JSON.stringify(costesTotales)},
+  "margen_total": ${JSON.stringify(margenTotal)},
+  "margen_pct": ${JSON.stringify(margenPct)}
+}
+\`\`\`
 
 ---
 # Resumen ejecutivo (para directivos)
@@ -312,10 +309,10 @@ Comentario: ${safe(ia.punto_equilibrio)}
 Instrucciones de gráfico: barras con 4 columnas (Precio +5%, Precio −5%, Ocupación +10%, Ocupación −10%).
 • Muestra la cifra de margen (en €) encima de cada barra. Formato es-ES.
 Resultados:
-- +5% precio ⇒ margen: ${fEUR(esc.base.margen + (ensureSens(d).precio_up5 - ( (d.ingresos||[]).reduce((a,b)=>a+b,0) - ((d.cVariables||[]).reduce((a,b)=>a+b,0) + (d.cfMensual||[]).reduce((a,b)=>a+b,0)) )))} 
-- −5% precio ⇒ margen: ${fEUR(ensureSens(d).precio_dn5)}
-- +10% ocupación ⇒ margen: ${fEUR(ensureSens(d).occ_up10)}
-- −10% ocupación ⇒ margen: ${fEUR(ensureSens(d).occ_dn10)}
+- +5% precio ⇒ margen: ${fEUR(sens.precio_up5)}
+- −5% precio ⇒ margen: ${fEUR(sens.precio_dn5)}
+- +10% ocupación ⇒ margen: ${fEUR(sens.occ_up10)}
+- −10% ocupación ⇒ margen: ${fEUR(sens.occ_dn10)}
 Insight: ${safe(ia.sensibilidades)}
 
 ---
