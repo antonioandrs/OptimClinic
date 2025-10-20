@@ -40,44 +40,114 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // IA/narrativa a partir de lastData y de la propia UI
-  function buildIAFromData(d){
-    const beMes   = d.mesBE ?? d.breakEvenMonth ?? null;
-    const beHit   = Number.isFinite(beMes);
-    const roi     = d.roiFinal ?? d.roi ?? null;
-    const tir     = d.tirAnual ?? d.tir ?? null;
-    const van     = d.van ?? d.npv ?? null;
-    const cajaMax = d.necesidadMaxCaja ?? d.cashNeedMax ?? null;
-    const mesTenso= d.mesMasTenso ?? d.worstMonth ?? null;
+  // === Reemplaza TODO este bloque en tu archivo ===
+function buildIAFromData(d){
+  const fEUR = (n) => new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"}).format(Number.isFinite(n)?n:0);
+  const pct1 = (x) => {
+    if (x==null || isNaN(x)) return "–";
+    const v = Math.abs(x) > 1.5 ? x : x*100;
+    return `${v.toFixed(1)}%`;
+  };
+  const safe  = (s) => (s ?? "").toString().trim();
 
-    const resumenBE   = beHit ? `Se alcanza el punto de equilibrio en el mes ${beMes}.`
-                              : `No se alcanza el punto de equilibrio (break-even) en el horizonte modelado.`;
-    const resumenROI  = roi!=null ? `ROI proyectado: ${pct1(roi)}${roi<0?' (bajo)':''}.` : "";
-    const resumenTIR  = tir!=null ? `TIR anual estimada: ${pct1(tir)}${tir<0?' (negativa)':''}.` : "";
-    const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
-    const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
-
-    const recsUI = scrapeSectionByHeading("Recomendaciones") || scrapeSectionByHeading("Recomendaciones prácticas");
-    const guiaUI = scrapeSectionByHeading("Guía para no financieros");
-
-    return {
-      resumen_general: [resumenBE, resumenROI, resumenTIR, resumenVAN, resumenCaja].filter(Boolean).join(" "),
-      contexto: "Se analizan datos reales y proyecciones configuradas en Planificación Financiera.",
-      ingresos: "Impulsados por volumen y ticket medio.",
-      costes: "Fijos + variables; vigilar consumibles y horas.",
-      margen: "Condicionado por precio efectivo y coste variable.",
-      ticket: "Derivado del mix de servicios y aseguradoras.",
-      tendencias_mensuales: "Estacionalidad visible en las series mensuales.",
-      punto_equilibrio: resumenBE,
-      escenario_base: "Mantener disciplina de costes y ocupación estable.",
-      escenario_opt: "Upside con +precio/+ocupación y mejor mix.",
-      escenario_pes: "Plan defensivo si cae demanda o suben fijos.",
-      sensibilidades: "Precio y ocupación son las palancas de mayor impacto.",
-      equipo_medico: "Top 3 concentran la mayor parte del margen.",
-      recomendaciones_financieras: safe(recsUI) || "- Revisar tarifas (premiumización)\n- Optimizar agenda en horas pico\n- Ajustar compras a rotación\n- KPI semanales por profesional",
-      resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida.",
-      guia_no_financieros: safe(guiaUI) || `• Break-even: cobros = pagos.\n• ROI: retorno sobre inversión inicial.\n• VAN: valor hoy de flujos futuros.\n• TIR: “interés” anual equivalente.\n• EBITDA: resultado operativo antes de amortizaciones e intereses.`
-    };
+  // 1) Detección robusta del BE (desde datos, UI o heurística)
+  function detectBEMonth(){
+    const candidates = [
+      d.mesBE, d.breakEvenMonth, d.break_even_month, d.beMes, d.breakEvenMes,
+      d.breakEven?.mes, d.breakEven?.month, d.kpis?.breakEvenMes, d.kpis?.beMes
+    ];
+    for (const v of candidates) {
+      if (v==null) continue;
+      if (typeof v === "number" && isFinite(v)) return { hit: true, mes: v };
+      if (typeof v === "string") {
+        // “Mes 8 / 12”, “8/12”, “mes 8”, etc.
+        let m = v.match(/mes\s*(\d{1,2})/i) || v.match(/(\d{1,2})\s*\/\s*\d{1,2}/);
+        if (!m) m = v.match(/\b(\d{1,2})\b/);
+        if (m) return { hit: true, mes: Number(m[1]) };
+        if (/no\s+alcanzad/i.test(v)) return { hit: false, mes: null };
+      }
+    }
+    // Leer de la UI (“Break-even”, “Mes 8 / 12”, “No alcanzado”)
+    const node = Array.from(document.querySelectorAll("*"))
+      .find(el => /break-?even/i.test(el.textContent || ""));
+    if (node) {
+      const txt = (node.closest(".card,div,section")?.innerText || node.textContent || "").trim();
+      const m1 = txt.match(/Mes\s*(\d{1,2})/i) || txt.match(/(\d{1,2})\s*\/\s*\d{1,2}/);
+      if (m1) return { hit: true, mes: Number(m1[1]) };
+      if (/No\s+alcanzad/i.test(txt)) return { hit: false, mes: null };
+    }
+    // Heurística: si ROI o VAN positivos, estimar por acumulado del margen (EBITDA)
+    const roi = d.roiFinal ?? d.roi;
+    const van = d.van ?? d.npv;
+    if ((roi!=null && roi>0) || (van!=null && van>0)) {
+      const serie = (d.ebitda || []).map(x => +x || 0);
+      let acc = 0;
+      for (let i=0;i<serie.length;i++){ acc += serie[i]; if (acc >= 0) return { hit:true, mes:i+1 }; }
+      if (serie.length) return { hit:true, mes: serie.length };
+    }
+    return { hit:false, mes:null };
   }
+
+  const { hit: beHit, mes: beMes } = detectBEMonth();
+
+  // Señales numéricas
+  const roi     = d.roiFinal ?? d.roi ?? null;
+  const tir     = d.tirAnual ?? d.tir ?? null;
+  const van     = d.van ?? d.npv ?? null;
+  const cajaMax = d.necesidadMaxCaja ?? d.cashNeedMax ?? null;
+  const mesTenso= d.mesMasTenso ?? d.worstMonth ?? null;
+
+  // Narrativa consistente con la detección de BE
+  const resumenBE   = beHit
+    ? `Se alcanza el punto de equilibrio en el mes ${beMes}.`
+    : `No se alcanza el punto de equilibrio (break-even) en el horizonte modelado.`;
+
+  const resumenROI  = roi!=null ? `ROI proyectado: ${pct1(roi)}${roi<0?' (bajo)':''}.` : "";
+  const resumenTIR  = tir!=null ? `TIR anual estimada: ${pct1(tir)}${tir<0?' (negativa)':''}.` : "";
+  const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
+  const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
+
+  // Extraer textos útiles de tu UI (si existen)
+  const recsUI = (function(){
+    const all = Array.from(document.querySelectorAll("h2,h3,h4"));
+    const h = all.find(el => /recomendaciones/i.test(el.textContent));
+    if (!h) return "";
+    const card = h.closest(".card, .analysis-card, section, div") || h.parentElement;
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll("button,input,select,textarea").forEach(n=>n.remove());
+    return clone.innerText.replace(/\n{3,}/g,"\n\n").trim();
+  })();
+
+  const guiaUI = (function(){
+    const all = Array.from(document.querySelectorAll("h2,h3,h4"));
+    const h = all.find(el => /Guía\s*para\s*no\s*financieros/i.test(el.textContent));
+    if (!h) return "";
+    const card = h.closest(".card, .analysis-card, section, div") || h.parentElement;
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll("button,input,select,textarea").forEach(n=>n.remove());
+    return clone.innerText.replace(/\n{3,}/g,"\n\n").trim();
+  })();
+
+  return {
+    resumen_general: [resumenBE, resumenROI, resumenTIR, resumenVAN, resumenCaja].filter(Boolean).join(" "),
+    contexto: "Se analizan datos reales y proyecciones configuradas en Planificación Financiera.",
+    ingresos: "Impulsados por volumen y ticket medio.",
+    costes: "Fijos + variables; vigilar consumibles y horas.",
+    margen: "Condicionado por precio efectivo y coste variable.",
+    ticket: "Derivado del mix de servicios y aseguradoras.",
+    tendencias_mensuales: "Estacionalidad visible en las series mensuales.",
+    punto_equilibrio: resumenBE,
+    escenario_base: "Mantener disciplina de costes y ocupación estable.",
+    escenario_opt: "Upside con +precio/+ocupación y mejor mix.",
+    escenario_pes: "Plan defensivo si cae demanda o suben fijos.",
+    sensibilidades: "Precio y ocupación son las palancas de mayor impacto.",
+    equipo_medico: "Top 3 concentran la mayor parte del margen.",
+    recomendaciones_financieras: safe(recsUI) || "- Revisar tarifas (premiumización)\n- Optimizar agenda en horas pico\n- Ajustar compras a rotación\n- KPI semanales por profesional",
+    resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida.",
+    guia_no_financieros: safe(guiaUI) || `• Break-even: cobros = pagos.\n• ROI: retorno sobre inversión.\n• VAN: valor hoy de flujos futuros.\n• TIR: “interés” anual equivalente.\n• EBITDA: resultado operativo antes de amortizaciones e intereses.`
+  };
+}
+
 
   // Escenarios si no existen (Base = real; Opt/Pes ±10% ingresos, ±2% costes fijos)
   function ensureScenarios(d){
