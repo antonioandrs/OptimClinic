@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ---------- Helpers ----------
   const fEUR = (n) => new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR"}).format(Number.isFinite(n)?n:0);
-  // % “smart”: si viene ya en % (abs>1.5), no volver a multiplicar x100
+  // % “smart”: si ya viene en % (abs>1.5), no multiplicar x100
   const pct1 = (x) => {
     if (x==null || isNaN(x)) return "–";
     const v = Math.abs(x) > 1.5 ? x : x*100;
@@ -20,23 +20,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const safe  = (s) => (s ?? "").toString().trim();
   const round = (x) => Math.round((x ?? 0));
 
+  // === BRANDING (ajustable)
+  const BRAND = {
+    primary: "#2563eb",
+    accent:  "#0891b2",
+    font:    "Inter, ui-sans-serif, system-ui",
+    logoUrl: "https://i.imgur.com/eRKd3Hp.jpeg"
+  };
+
   // Buscar texto de una tarjeta por su título visible
   function scrapeSectionByHeading(headingText){
     const all = Array.from(document.querySelectorAll("h3,h2,h4"));
     const h = all.find(el => el.textContent.trim().toLowerCase().includes(headingText.toLowerCase()));
     if (!h) return "";
-    // coge la tarjeta contenedora más cercana
-    const card = h.closest(".card, .analysis-card, section, div");
-    if (!card) return h.parentElement?.innerText || "";
-    // evita capturar botones/inputs
+    const card = h.closest(".card, .analysis-card, section, div") || h.parentElement;
     const clone = card.cloneNode(true);
     clone.querySelectorAll("button, input, select, textarea").forEach(n=>n.remove());
-    return clone.innerText
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+    return clone.innerText.replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  // Genera IA a partir de lastData o usa fallbacks
+  // IA/narrativa a partir de lastData y de la propia UI
   function buildIAFromData(d){
     const beMes   = d.mesBE ?? d.breakEvenMonth ?? null;
     const beHit   = Number.isFinite(beMes);
@@ -53,9 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
     const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
 
-    // Recomendaciones de la UI si existen
     const recsUI = scrapeSectionByHeading("Recomendaciones") || scrapeSectionByHeading("Recomendaciones prácticas");
-    // Guía para no financieros
     const guiaUI = scrapeSectionByHeading("Guía para no financieros");
 
     return {
@@ -78,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  // Escenarios si no existen (Base = real; Opt/Pes ±10% ingresos, ±2% costes)
+  // Escenarios si no existen (Base = real; Opt/Pes ±10% ingresos, ±2% costes fijos)
   function ensureScenarios(d){
     const esc = (window.OPTICLINIC_FIN?.escenarios || d.escenarios || {});
     if (esc.base && esc.opt && esc.pes) return esc;
@@ -90,9 +91,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const margen   = ingresos - costes;
     const mPct     = ingresos>0 ? margen/ingresos : 0;
 
-    const make = (ingFactor, costFactor) => {
+    const make = (ingFactor, fixedFactor) => {
       const ing = ingresos * ingFactor;
-      const cst = (cVar * (ingFactor)) + (cFijos * costFactor); // si sube demanda, suben variables; fijos casi constantes
+      const cst = (cVar * ingFactor) + (cFijos * fixedFactor);
       const mar = ing - cst;
       return { ingresos: ing, costes: cst, margen: mar, margenPct: ing>0 ? mar/ing : 0 };
     };
@@ -131,7 +132,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const d = window.lastData;
 
-    // Series mensuales (redondeadas para evitar decimales raros)
+    // Series mensuales (redondeadas)
     const ingresosMes_JSON = JSON.stringify((d.ingresos || []).map(round));
     const costesMes_JSON   = JSON.stringify((d.cVariables||[]).map((v,i)=> round(v + (d.cfMensual?.[i]||0))));
     const margenMes_JSON   = JSON.stringify((d.ebitda || []).map(round));
@@ -154,11 +155,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const esc = ensureScenarios(d);
     const sens = ensureSens(d);
 
-    // Otros inputs visibles
+    // Inputs de UI
     const clinica       = document.getElementById("empresaNombre")?.value || "Clínica Ejemplo";
     const ticketMedio   = Number(document.getElementById("ticketMedio")?.value || 0);
     const costeVariable = Number(document.getElementById("costeVariable")?.value || 0);
     const costeFijo     = Number(document.getElementById("costesFijos")?.value || 0);
+    const mesesModelados= d.mesesProyeccion || d.horizonte || (d.ingresos?.length || "—");
+    const mesInicialUI  = document.getElementById("mesInicial")?.value || "configurado en la app";
     const now = new Date().toLocaleDateString("es-ES");
 
     // Tabla por médico (si existe)
@@ -172,10 +175,14 @@ document.addEventListener("DOMContentLoaded", () => {
 Cliente: ${clinica}
 Fecha: ${now}
 Idioma: Español (es-ES)
-Formato deseado: Presentación 16:9, estilo consultoría (titulares claros + tablas + bullets).
+Formato: Presentación 16:9, estilo consultoría (titulares claros → 1 idea por slide, tablas legibles, bullets cortos).
 No inventes datos. No insertes enlaces externos ni créditos en el contenido.
-Usa euros con formato es-ES (ej.: 1.113.900 €). Para porcentajes usa 1 decimal (ej.: 31,9%).
-No uses el símbolo $ en ningún caso.
+Usa euros con formato es-ES (ej.: 1.113.900 €). Para porcentajes usa 1 decimal (ej.: 31,9%). No uses $.
+
+Branding:
+• Primario ${BRAND.primary}, acento ${BRAND.accent}, tipografía ${BRAND.font}.
+• Fondo blanco, iconografía sencilla, alto contraste para legibilidad.
+• Coloca el logo corporativo en la esquina superior derecha de la portada (logo: ${BRAND.logoUrl}).
 
 ---
 # Resumen ejecutivo (para directivos)
@@ -191,6 +198,10 @@ Puntos clave:
 # Contexto y objetivos
 ${safe(ia.contexto)}
 Objetivo: ofrecer una visión clara del rendimiento económico, riesgos y oportunidades de mejora; y recomendaciones accionables.
+
+---
+# Guía para no financieros
+${safe(ia.guia_no_financieros)}
 
 ---
 # KPIs principales
@@ -231,10 +242,10 @@ Comentario: ${safe(ia.punto_equilibrio)}
 Instrucciones de gráfico: barras con 4 columnas (Precio +5%, Precio −5%, Ocupación +10%, Ocupación −10%).
 • Muestra la cifra de margen (en €) encima de cada barra. Formato es-ES.
 Resultados:
-- +5% precio ⇒ margen: ${fEUR(sens.precio_up5)}
-- −5% precio ⇒ margen: ${fEUR(sens.precio_dn5)}
-- +10% ocupación ⇒ margen: ${fEUR(sens.occ_up10)}
-- −10% ocupación ⇒ margen: ${fEUR(sens.occ_dn10)}
+- +5% precio ⇒ margen: ${fEUR(esc.base.margen + (ensureSens(d).precio_up5 - ( (d.ingresos||[]).reduce((a,b)=>a+b,0) - ((d.cVariables||[]).reduce((a,b)=>a+b,0) + (d.cfMensual||[]).reduce((a,b)=>a+b,0)) )))} 
+- −5% precio ⇒ margen: ${fEUR(ensureSens(d).precio_dn5)}
+- +10% ocupación ⇒ margen: ${fEUR(ensureSens(d).occ_up10)}
+- −10% ocupación ⇒ margen: ${fEUR(ensureSens(d).occ_dn10)}
 Insight: ${safe(ia.sensibilidades)}
 
 ---
@@ -250,20 +261,16 @@ Comentario: ${safe(ia.equipo_medico)}
 ${safe(ia.recomendaciones_financieras)}
 
 ---
-# Guía para no financieros
-${safe(ia.guia_no_financieros)}
-
----
 # Resumen visual
 Instrucciones de gráfico: tarta de estructura de costes + barra de margen medio.  
 Notas: ${safe(ia.resumen_visual)}
 
 ---
 # Metodología y supuestos
-• Periodo real: Ene–Ago. Proyección Sep–Dic con media Ene–Jun (excluye Jul/Ago).  
-• Precios, ocupación y mix según configuración actual en OptiClinic.  
-• Impuestos, deuda y pagos incluidos cuando procede.  
-• Sin imágenes externas ni datos no verificados.
+• Horizonte modelado: ${mesesModelados} meses (mes inicial: ${mesInicialUI}).  
+• Supuestos de precio, ocupación y mix: según configuración actual en OptiClinic.  
+• Los cálculos usan los datos y parámetros visibles en la app; no se incluyen fuentes externas.  
+• Revisión mensual de KPIs recomendada para recalibrar supuestos.
 
 ---
 # Riesgos y límites del modelo
