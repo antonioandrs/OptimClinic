@@ -691,7 +691,7 @@
               <button class="btn btn-primary" onclick="generateBankDossier()">🏦 Generar Dossier</button>
             </div>
 
-<!-- NUEVO: Informe Integral (TOP) -->
+<!-- NUEVO: Informe Integral (TOP) + Generación Gamma (Finanzas) -->
 <div class="analysis-card">
   <h3 class="analysis-title">🏆 Informe Integral (TOP)</h3>
   <p>Integra Finanzas + Competidores + Mercado en un único documento con gráficos y conclusiones.</p>
@@ -701,38 +701,68 @@
   </div>
 </div>
 
-          <div class="card" style="margin: 2rem 0;">
-            <div class="card-header">
-              <h3 style="margin: 0;">🎯 Configuración de Informes</h3>
-            </div>
-            <div class="card-body">
-              <div class="form-row">
-                <div>
-                  <label for="empresaNombre">Nombre de la empresa</label>
-                  <input id="empresaNombre" type="text" placeholder="Clínica Ejemplo S.L." />
-                </div>
-                <div>
-                  <label for="responsableNombre">Responsable del proyecto</label>
-                  <input id="responsableNombre" type="text" placeholder="Dr. Juan Pérez" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="reportPreview" style="display: none;">
-            <div class="card">
-              <div class="card-header">
-                <h3 style="margin: 0;">👁️ Vista Previa del Informe</h3>
-              </div>
-              <div class="card-body" id="reportContent"></div>
-            </div>
-          </div>
-        </div>
+<!-- Configuración de Informes -->
+<div class="card" style="margin: 2rem 0;">
+  <div class="card-header">
+    <h3 style="margin: 0;">🎯 Configuración de Informes</h3>
+  </div>
+  <div class="card-body">
+    <div class="form-row">
+      <div>
+        <label for="empresaNombre">Nombre de la empresa</label>
+        <input id="empresaNombre" type="text" placeholder="Clínica Ejemplo S.L." />
+      </div>
+      <div>
+        <label for="responsableNombre">Responsable del proyecto</label>
+        <input id="responsableNombre" type="text" placeholder="Dr. Juan Pérez" />
       </div>
     </div>
-  </main>
+  </div>
+</div>
 
-  <script>
+<!-- NUEVO: Presentación Gamma (Finanzas) -->
+<div class="analysis-card">
+  <h3 class="analysis-title">🎞️ Presentación Gamma (Finanzas)</h3>
+  <p>Genera un prompt listo para pegar en Gamma con la parte financiera (autoexplicativa) usando los datos actuales.</p>
+  <div class="form-row">
+    <button id="btnDossierFin" class="btn-primary">Generar dossier (Financiero)</button>
+  </div>
+  <small style="display:block; margin-top:.5rem; opacity:.75;">
+    Tip: primero pulsa <strong>📊 Generar Análisis Completo</strong> en Planificación Financiera para poblar los datos.
+  </small>
+</div>
+
+<!-- Vista previa Informe (se mantiene) -->
+<div id="reportPreview" style="display: none;">
+  <div class="card">
+    <div class="card-header">
+      <h3 style="margin: 0;">👁️ Vista Previa del Informe</h3>
+    </div>
+    <div class="card-body" id="reportContent"></div>
+  </div>
+</div>
+
+<!-- MODAL: Prompt para Gamma (manual) -->
+<div id="modalPrompt" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9999;">
+  <div style="max-width:900px; margin:5vh auto; background:#fff; padding:16px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.15);">
+    <h3 style="margin-top:0;">Prompt generado (cópialo y pégalo en Gamma)</h3>
+    <p style="margin:.25rem 0 1rem; opacity:.75;">El prompt incluye datos financieros + texto interpretativo. Gamma lo convertirá en una presentación 16:9.</p>
+    <textarea id="taPrompt" rows="18" style="width:100%; font-family:ui-monospace,monospace; border:1px solid #e5e7eb; border-radius:8px; padding:10px;"></textarea>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button id="btnCopy" class="btn-primary">Copiar</button>
+      <button id="btnDownload" class="btn-secondary">Descargar .md</button>
+      <button id="btnClose" class="btn-tertiary">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+</div>
+</main>
+
+<script>
+
     /* ===================== TU CÓDIGO JAVASCRIPT ORIGINAL COMPLETO ===================== */
     const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     
@@ -2470,5 +2500,7 @@ function mostrarDatosTemporales(data) {
   });
 })();
   </script>
+<!-- NUEVO: generador de prompt para Gamma -->
+  <script src="api/gamma-prompt.js"></script>
 </body>
 </html>
