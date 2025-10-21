@@ -37,7 +37,7 @@ document.addEventListener("DOMContentLoaded", () => {
     logoUrl: "https://i.imgur.com/eRKd3Hp.jpeg"
   };
 
-  // Extrae texto de una tarjeta por su título visible
+  // Extrae texto de una tarjeta por su título visible (por si quieres adjuntar como “complemento”)
   function scrapeSectionByHeading(headingText){
     const all = Array.from(document.querySelectorAll("h3,h2,h4"));
     const h = all.find(el => el.textContent.trim().toLowerCase().includes(headingText.toLowerCase()));
@@ -172,131 +172,126 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ------- Recs data-driven (sin genéricos) -------
-function generateDataDrivenRecs(d, ctx){
-  const bullets = [];   // conclusiones/diagnóstico
-  const out     = [];   // buffer de salida final
+  function generateDataDrivenRecs(d, ctx){
+    const bullets = [];   // conclusiones/diagnóstico
+    const out     = [];   // buffer de salida final
 
-  const meses = d.ingresos?.length || 0;
-  const ingresosTotales = (d.ingresos||[]).reduce((a,b)=>a+(+b||0),0);
-  const costesTotales   = (d.cVariables||[]).reduce((a,b)=>a+(+b||0),0) + (d.cfMensual||[]).reduce((a,b)=>a+(+b||0),0);
-  const margenTotal     = ingresosTotales - costesTotales;
-  const margenPct       = ingresosTotales>0 ? (margenTotal/ingresosTotales) : null;
+    const meses = d.ingresos?.length || 0;
+    const ingresosTotales = sum(d.ingresos||[]);
+    const costesTotales   = sum(d.cVariables||[]) + sum(d.cfMensual||[]);
+    const margenTotal     = ingresosTotales - costesTotales;
+    const margenPct       = ingresosTotales>0 ? (margenTotal/ingresosTotales) : null;
 
-  const roi     = d.roiFinal ?? null;
-  const tir     = d.tirAnual ?? null;
-  const van     = d.van ?? null;
-  const cajaMax = d.necesidadMaxCaja ?? null;
+    const roi     = d.roiFinal ?? null;
+    const tir     = d.tirAnual ?? null;
+    const van     = d.van ?? null;
+    const cajaMax = d.necesidadMaxCaja ?? null;
 
-  const sens = ctx.sens || {};
-  const baseMargin = margenTotal;
-  const dPrecioUp  = (sens.precio_up5 ?? null) - baseMargin;
-  const dPrecioDn  = baseMargin - (sens.precio_dn5 ?? null);
-  const dOccUp     = (sens.occ_up10 ?? null) - baseMargin;
-  const dOccDn     = baseMargin - (sens.occ_dn10 ?? null);
+    const sens = ctx.sens || {};
+    const baseMargin = margenTotal;
+    const dPrecioUp  = (sens.precio_up5 ?? null) - baseMargin;
+    const dPrecioDn  = baseMargin - (sens.precio_dn5 ?? null);
+    const dOccUp     = (sens.occ_up10 ?? null) - baseMargin;
+    const dOccDn     = baseMargin - (sens.occ_dn10 ?? null);
 
-  const ticketMedio   = Number(document.getElementById("ticketMedio")?.value || 0);
-  const costeVariable = Number(document.getElementById("costeVariable")?.value || 0);
-  const costeFijo     = Number(document.getElementById("costesFijos")?.value || 0);
-  const mcUnitario    = (ticketMedio && costeVariable>=0) ? (ticketMedio - costeVariable) : null;
-  const mcRatio       = (ticketMedio>0) ? (mcUnitario/ticketMedio) : null;
+    const ticketMedio   = Number(document.getElementById("ticketMedio")?.value || 0);
+    const costeVariable = Number(document.getElementById("costeVariable")?.value || 0);
+    const costeFijo     = Number(document.getElementById("costesFijos")?.value || 0);
+    const mcUnitario    = (ticketMedio && costeVariable>=0) ? (ticketMedio - costeVariable) : null;
+    const mcRatio       = (ticketMedio>0) ? (mcUnitario/ticketMedio) : null;
 
-  // Desglose anual
-  const sum = (arr)=> (arr||[]).reduce((a,b)=>a+(+b||0),0);
-  const yearlySums = (series)=> {
-    const out=[]; for(let i=0;i<(series?.length||0); i+=12){ out.push(sum(series.slice(i,i+12))); } return out;
-  };
-  const yIngresos = yearlySums(d.ingresos||[]);
-  const yCostes   = yearlySums((d.cVariables||[]).map((v,i)=> v + (d.cfMensual?.[i]||0)));
-  const yMargen   = yIngresos.map((v,i)=> v - (yCostes[i] ?? 0));
-  const nYears    = Math.max(yIngresos.length, yCostes.length);
-  let gIng = null, gMar = null;
-  if (nYears>=2 && yIngresos[0]>0){
-    gIng = (yIngresos[1]-yIngresos[0])/yIngresos[0];
-    gMar = (yMargen[1]-yMargen[0])/(yMargen[0] || 1);
+    // Desglose anual
+    const yIngresos = yearlySums(d.ingresos||[]);
+    const yCostes   = yearlySums((d.cVariables||[]).map((v,i)=> v + (d.cfMensual?.[i]||0)));
+    const yMargen   = yIngresos.map((v,i)=> v - (yCostes[i] ?? 0));
+    const nYears    = Math.max(yIngresos.length, yCostes.length);
+    let gIng = null, gMar = null;
+    if (nYears>=2 && yIngresos[0]>0){
+      gIng = (yIngresos[1]-yIngresos[0])/yIngresos[0];
+      gMar = (yMargen[1]-yMargen[0])/(yMargen[0] || 1);
+    }
+
+    // 1) Diagnóstico por ROI/margen/VAN
+    if (roi!=null){
+      if (roi < 0.10) bullets.push("ROI <10%. Priorizar palancas de precio y ocupación para elevar retornos.");
+      else if (roi < 0.15) bullets.push("ROI en 10–15%. Pricing y eficiencia pueden llevarlo al 15% sectorial.");
+      else bullets.push("ROI competitivo (≥15%). Mantener disciplina de precios y coste variable.");
+    }
+    if (margenPct!=null){
+      if (margenPct < 0.30) bullets.push("Margen operativo <30%: requiere eficiencia operativa y revisión de estructura.");
+      else if (margenPct < 0.35) bullets.push("Margen 30–35%: aún mejorable.");
+      else bullets.push("Margen ≥35%: consolidar buenas prácticas y estandarizar.");
+    }
+    if (van!=null){
+      if (van <= 0) bullets.push("VAN no positivo: revisar supuestos de precio/ocupación y coste de capital.");
+      else bullets.push("VAN positivo: el proyecto crea valor a la tasa de descuento actual.");
+    }
+
+    // 2) Liquidez
+    if (typeof cajaMax === "number"){
+      if (cajaMax > 0) bullets.push(`Riesgo de liquidez: necesidad máxima ${fEUR(cajaMax)}. Preparar línea de crédito o escalado de gastos.`);
+      else bullets.push("Sin necesidad máxima de caja: holgura operativa suficiente.");
+    }
+
+    // 3) Palancas por sensibilidad
+    const impacts = [];
+    if (Number.isFinite(dPrecioUp)) impacts.push({k:"Precio +5%",  v:dPrecioUp});
+    if (Number.isFinite(dOccUp))    impacts.push({k:"Ocupación +10%", v:dOccUp});
+    if (Number.isFinite(dPrecioDn)) impacts.push({k:"Precio −5%",  v:-dPrecioDn});
+    if (Number.isFinite(dOccDn))    impacts.push({k:"Ocupación −10%", v:-dOccDn});
+    impacts.sort((a,b)=> (b.v||0)-(a.v||0));
+    if (impacts.length){
+      const top = impacts.slice(0,2).map(x=> x.k).join(" y ");
+      bullets.push(`Palancas con mayor impacto en margen: ${top}. Priorizar experimentos controlados.`);
+    }
+
+    // 4) Unit economics
+    if (mcRatio!=null){
+      if (mcRatio < 0.5) bullets.push("Margen contribución unitario <50%: negociar consumibles y optimizar tiempos por acto.");
+      else bullets.push("Margen contribución unitario ≥50%: mantener protocolos y compras eficientes.");
+    }
+
+    // 5) Crecimiento anual
+    if (gIng!=null){
+      if (gIng < 0) bullets.push("Ingresos Año 2 < Año 1: reforzar adquisición y fidelización para recuperar tracción.");
+      else bullets.push(`Ingresos crecen ${pct1(gIng)} entre años. Vigilar que el crecimiento no erosione margen.`);
+    }
+
+    // 6) Break-even
+    const beMes = ctx.be?.mes ?? d.mesBE ?? null;
+    if (beMes!=null && meses){
+      const tarde = beMes > Math.ceil(meses*0.75);
+      if (tarde) bullets.push(`Break-even tardío (mes ${beMes} de ${meses}). Reforzar pricing/ocupación y escalado progresivo de fijos.`);
+      else bullets.push(`Break-even en mes ${beMes}. Acelerar amortización y mejora de caja tras ese punto.`);
+    }
+
+    if (!bullets.length) {
+      return "No se emiten recomendaciones automatizadas: faltan datos suficientes (ROI/margen/sensibilidades/BE).";
+    }
+
+    const palancas = [];
+    if (Number.isFinite(dPrecioUp) || Number.isFinite(dPrecioDn)) palancas.push("- **Precio (test A/B, mix, premiumización)** en servicios con elasticidad controlada.");
+    if (Number.isFinite(dOccUp) || Number.isFinite(dOccDn))       palancas.push("- **Ocupación (agenda, primeras visitas, recall)** para absorber fijos.");
+    if (mcRatio!=null && mcRatio < 0.5)                           palancas.push("- **Coste variable/paciente**: protocolos, proveedores, compras a rotación.");
+    if (!palancas.length)                                         palancas.push("- **Foco en la palanca dominante** según sensibilidades y priorización por ROI operativo.");
+
+    const operativas = [];
+    if (typeof cajaMax === "number" && cajaMax > 0)              operativas.push("- Línea de crédito / escalado de CAPEX y gastos.");
+    operativas.push("- Cuadro de mando mensual (margen, ROI, caja) y revisión trimestral de precios.");
+    operativas.push("- Recordatorios, prepago de señal y overbooking prudente en horas pico.");
+    operativas.push("- Optimizar CPA con tracking de conversión y ramp-up por etapas.");
+
+    out.push("## Conclusiones de diagnóstico");
+    bullets.forEach(b => out.push(`- ${b}`));
+    out.push("\n## Palancas prioritarias");
+    palancas.forEach(p => out.push(p));
+    out.push("\n## Recomendaciones operativas");
+    operativas.forEach(p => out.push(p));
+
+    return out.join("\n");
   }
 
-  // 1) Diagnóstico por ROI/margen/VAN
-  if (roi!=null){
-    if (roi < 0.10) bullets.push("ROI por debajo del 10%. Priorizar palancas de precio y ocupación para elevar retornos.");
-    else if (roi < 0.15) bullets.push("ROI en zona 10–15%. Pricing y eficiencia pueden llevarlo al 15% sectorial.");
-    else bullets.push("ROI competitivo (≥15%). Mantener disciplina de precios y coste variable.");
-  }
-  if (margenPct!=null){
-    if (margenPct < 0.30) bullets.push("Margen operativo <30%. Requiere eficiencia operativa y revisión de estructura.");
-    else if (margenPct < 0.35) bullets.push("Margen 30–35% (sector): aún mejorable.");
-    else bullets.push("Margen ≥35%: consolidar buenas prácticas y estandarizar.");
-  }
-  if (van!=null){
-    if (van <= 0) bullets.push("VAN no positivo: revisar supuestos de precio/ocupación y coste de capital.");
-    else bullets.push("VAN positivo: el proyecto crea valor a la tasa de descuento actual.");
-  }
-
-  // 2) Liquidez
-  if (typeof cajaMax === "number"){
-    if (cajaMax > 0) bullets.push(`Riesgo de liquidez: necesidad máxima ${fEUR(cajaMax)}. Preparar línea de crédito o escalado de gastos.`);
-    else bullets.push("Sin necesidad máxima de caja: holgura operativa suficiente.");
-  }
-
-  // 3) Palancas por sensibilidad
-  const impacts = [];
-  if (Number.isFinite(dPrecioUp)) impacts.push({k:"Precio +5%",  v:dPrecioUp});
-  if (Number.isFinite(dOccUp))    impacts.push({k:"Ocupación +10%", v:dOccUp});
-  if (Number.isFinite(dPrecioDn)) impacts.push({k:"Precio −5%",  v:-dPrecioDn});
-  if (Number.isFinite(dOccDn))    impacts.push({k:"Ocupación −10%", v:-dOccDn});
-  impacts.sort((a,b)=> (b.v||0)-(a.v||0));
-  if (impacts.length){
-    const top = impacts.slice(0,2).map(x=> x.k).join(" y ");
-    bullets.push(`Palancas con mayor impacto en margen: ${top}. Priorizar experimentos controlados.`);
-  }
-
-  // 4) Unit economics
-  if (mcRatio!=null){
-    if (mcRatio < 0.5) bullets.push("Margen contribución unitario <50%: negociar consumibles y optimizar tiempos por acto.");
-    else bullets.push("Margen contribución unitario ≥50%: mantener protocolos y compras eficientes.");
-  }
-
-  // 5) Crecimiento anual
-  if (gIng!=null){
-    if (gIng < 0) bullets.push("Ingresos Año 2 < Año 1: reforzar adquisición y fidelización para recuperar tracción.");
-    else bullets.push(`Ingresos crecen ${pct1(gIng)} entre años. Vigilar que el crecimiento no erosione margen.`);
-  }
-
-  // 6) Break-even
-  const beMes = ctx.be?.mes ?? d.mesBE ?? null;
-  if (beMes!=null && meses){
-    const tarde = beMes > Math.ceil(meses*0.75);
-    if (tarde) bullets.push(`Break-even tardío (mes ${beMes} de ${meses}). Reforzar pricing/ocupación y escalado progresivo de fijos.`);
-    else bullets.push(`Break-even en mes ${beMes}. Acelerar amortización y mejora de caja tras ese punto.`);
-  }
-
-  if (!bullets.length) {
-    return "No se emiten recomendaciones automatizadas: faltan datos suficientes (ROI/margen/sensibilidades/BE).";
-  }
-
-  const palancas = [];
-  if (Number.isFinite(dPrecioUp) || Number.isFinite(dPrecioDn)) palancas.push("- **Precio (test A/B, mix, premiumización)** en servicios con elasticidad controlada.");
-  if (Number.isFinite(dOccUp) || Number.isFinite(dOccDn))       palancas.push("- **Ocupación (agenda, primeras visitas, recall)** para absorber fijos.");
-  if (mcRatio!=null && mcRatio < 0.5)                           palancas.push("- **Coste variable/paciente**: protocolos, proveedores, compras a rotación.");
-  if (!palancas.length)                                         palancas.push("- **Foco en la palanca dominante** según sensibilidades y priorización por ROI operativo.");
-
-  const operativas = [];
-  if (typeof cajaMax === "number" && cajaMax > 0)              operativas.push("- Línea de crédito / escalado de CAPEX y gastos.");
-  operativas.push("- Cuadro de mando mensual (margen, ROI, caja) y revisión trimestral de precios.");
-  operativas.push("- Recordatorios, prepago de señal y overbooking prudente en horas pico.");
-  operativas.push("- Optimizar CPA con tracking de conversión y ramp-up por etapas.");
-
-  out.push("## Conclusiones de diagnóstico");
-  bullets.forEach(b => out.push(`- ${b}`));
-  out.push("\n## Palancas prioritarias");
-  palancas.forEach(p => out.push(p));
-  out.push("\n## Recomendaciones operativas");
-  operativas.forEach(p => out.push(p));
-
-  return out.join("\n");
-}
-
-
-  // ===== IA / narrativa base + BE robusto =====
+  // ===== IA / narrativa base (sin genéricos) + BE robusto =====
   function buildIAFromData(d, ctxExtras){
     // --- detección robusta del Break-even ---
     function detectBEMonth(){
@@ -354,17 +349,16 @@ function generateDataDrivenRecs(d, ctx){
     const resumenVAN  = van!=null ? `VAN (valor actual neto): ${fEUR(van)}.` : "";
     const resumenCaja = cajaMax!=null ? `Necesidad máxima de caja: ${fEUR(cajaMax)}${mesTenso?` (momento más tenso: ${mesTenso}).`:''}` : "";
 
-    // 1) Prioriza recomendaciones de la UI
-    const recsUI = scrapeSectionByHeading("Recomendaciones") || scrapeSectionByHeading("Recomendaciones prácticas");
+    // 1) Recomendaciones data-driven SIEMPRE (primarias)
+    const recsData = generateDataDrivenRecs(d, { sens: ctxExtras?.sens, be });
 
-    // 2) Prioriza recomendaciones del objeto IA si existen
+    // 2) Complementos (opcionales) desde UI/IA si existen
+    const recsUI = scrapeSectionByHeading("Recomendaciones") || scrapeSectionByHeading("Recomendaciones prácticas");
     const iaObj = (typeof window.ANALISIS_FIN_IA === "object" && window.ANALISIS_FIN_IA) ? window.ANALISIS_FIN_IA : null;
     const recsIA = iaObj?.recomendaciones || iaObj?.recs || iaObj?.palancas || null;
 
-    // 3) Data-driven si no hay UI/IA
-    const recsData = generateDataDrivenRecs(d, { sens: ctxExtras?.sens, be });
-
-    const recomendaciones_finales = safe(recsUI) || safe(recsIA) || safe(recsData);
+    const complementos = [safe(recsUI), safe(recsIA)].filter(Boolean).join("\n");
+    const recomendaciones_finales = complementos ? (recsData + "\n\n---\n### Complementos (UI/IA)\n" + complementos) : recsData;
 
     return {
       resumen_general: [resumenBE, resumenROI, resumenTIR, resumenVAN, resumenCaja].filter(Boolean).join(" "),
@@ -373,7 +367,7 @@ function generateDataDrivenRecs(d, ctx){
       costes: "Fijos + variables; vigilar consumibles y horas.",
       margen: "Condicionado por precio efectivo y coste variable.",
       ticket: "Derivado del mix de servicios y aseguradoras.",
-      tendencias_mensuales: "Estacionalidad visible en las series mensuales.",
+      tendencias_mensuales: "Se observa la estacionalidad en las series mensuales.",
       punto_equilibrio: resumenBE,
       escenario_base: "Mantener disciplina de costes y ocupación estable.",
       escenario_opt: "Upside con +precio/+ocupación y mejor mix.",
@@ -381,7 +375,6 @@ function generateDataDrivenRecs(d, ctx){
       sensibilidades: "Precio y ocupación son las palancas de mayor impacto.",
       equipo_medico: "Top 3 concentran la mayor parte del margen.",
       recomendaciones_financieras: recomendaciones_finales,
-      resumen_visual: "Usar tarta de costes y barra de margen medio para lectura rápida.",
       guia_no_financieros: `• Break-even: cobros = pagos.\n• ROI: retorno sobre inversión.\n• VAN: valor hoy de flujos futuros.\n• TIR: “interés” anual equivalente.\n• EBITDA: resultado operativo antes de amortizaciones e intereses.`
     };
   }
@@ -449,7 +442,7 @@ function generateDataDrivenRecs(d, ctx){
     const esc  = ensureScenarios(dd);
     const sens = dd.sens || ensureSens(dd);
 
-    // IA / narrativa (con recs data-driven)
+    // IA / narrativa (con recs data-driven + complementos)
     const ia = buildIAFromData(dd, { sens, esc });
 
     // Agregados totales
@@ -481,7 +474,7 @@ function generateDataDrivenRecs(d, ctx){
     const nYears    = Math.max(yIngresos.length, yCostes.length, yMargen.length);
     const labels    = yearLabels(nYears);
 
-    // Flujo de caja acumulado (ya enriquecido)
+    // Flujo de caja acumulado
     const flowAcum = cumulate(dd.cashflow).map(round);
     const flowAcum_JSON = JSON.stringify(flowAcum);
     const flujoSource = dd.flowSource;
@@ -493,8 +486,7 @@ function generateDataDrivenRecs(d, ctx){
     ).join("\n") || "| – | – | – | – | – |";
 
     // Tabla KPIs por año
-    const rowYears = (arr, fmt=(x)=>fEUR(x)) =>
-      labels.map((_, i)=> arr[i]!=null ? fmt(arr[i]) : "—");
+    const rowYears = (arr, fmt=(x)=>fEUR(x)) => labels.map((_, i)=> arr[i]!=null ? fmt(arr[i]) : "—");
     const kpiTableByYear = [
       `| Indicador | ${labels.join(" | ")} | Total | Insight |`,
       `|---|${labels.map(()=> '---:').join('|')}|---:|---|`,
@@ -510,6 +502,19 @@ function generateDataDrivenRecs(d, ctx){
       const gCos = (yCostes[1]-yCostes[0]) / (yCostes[0]||1);
       growthInsight = `• Los ingresos crecen ${pct1(gIng)} entre ${labels[0]} y ${labels[1]}, mientras que los costes crecen ${pct1(gCos)}, mejorando el margen operativo.`;
     }
+
+    // Ratios extra
+    const ratioCajaSobreIngresos = ingresosTotales>0 ? (dd.necesidadMaxCaja/ingresosTotales) : null;
+    const paybackTxt = dd.mesBE!=null ? `Mes ${dd.mesBE}` : "—";
+
+    // Conclusiones finales automáticas
+    const conclusiones = [
+      roiFinal!=null ? `Rentabilidad proyectada ${pct1(roiFinal)}.` : null,
+      `Margen medio ${pct1(margenPct)}.`,
+      (dd.mesBE!=null) ? `Break-even previsto en el mes ${dd.mesBE}.` : `Break-even no alcanzado en el horizonte modelado.`,
+      van!=null ? `VAN ${fEUR(van)}.` : null,
+      (typeof dd.necesidadMaxCaja==="number" && dd.necesidadMaxCaja>0) ? `Necesidad de caja máxima ${fEUR(dd.necesidadMaxCaja)}.` : `Sin necesidad máxima de caja detectada.`
+    ].filter(Boolean).join(" ");
 
     // ---------- TEMPLATE ----------
     return `
@@ -554,7 +559,7 @@ Branding:
 
 ---
 # Propósito del informe
-Analizar la rentabilidad operativa y la viabilidad financiera del proyecto, identificando riesgos y oportunidades de mejora, en un formato visual adaptado a presentaciones directivas.
+Analiza la rentabilidad operativa y la viabilidad financiera del proyecto, identificando riesgos y oportunidades de mejora, en un formato visual para dirección.
 
 ---
 # Diagnóstico inicial del proyecto
@@ -589,9 +594,9 @@ ${growthInsight ? ("\n" + growthInsight) : ""}
 
 ---
 # Evolución mensual
-Instrucciones de gráfico: línea con 3 series (Ingresos, Costes, Margen/EBITDA).
-• Ejes y tooltips en euros (es-ES).  
-• Etiqueta puntos Mes 1, 6, 12, 18, 24 y marca el mes de BE con anotación.
+Dibuja una **línea** con 3 series (Ingresos, Costes, Margen/EBITDA).  
+Etiqueta puntos Mes 1, 6, 12, 18, 24 y marca el mes de BE con anotación.  
+Usa formato es-ES y símbolo € en ejes y tooltips.
 **Ingresos (mensual)**: ${ingresosMes_JSON}
 **Costes (mensual)**: ${costesMes_JSON}
 **Margen (mensual)**: ${margenMes_JSON}
@@ -606,9 +611,9 @@ Comentario: ${safe(ia.punto_equilibrio)}
 
 ---
 # Flujo de caja acumulado
-Instrucciones de gráfico: línea acumulada del **${flujoSource}**.
-• El punto de corte indica recuperación de inversión (payback).  
-• Si se usa EBITDA como proxy, indicarlo en nota metodológica.
+Dibuja una **línea acumulada** del **${flujoSource}**.  
+Anota el punto en el que el acumulado cruza **0** (payback).  
+Usa euros (€) y fondo blanco.
 **Flujo acumulado (mensual)**: ${flowAcum_JSON}
 
 ---
@@ -621,8 +626,8 @@ Instrucciones de gráfico: línea acumulada del **${flujoSource}**.
 
 ---
 # Sensibilidades (precio y ocupación)
-Instrucciones de gráfico: barras con 4 columnas (Precio +5%, Precio −5%, Ocupación +10%, Ocupación −10%).
-• Muestra la cifra de margen (en €) encima de cada barra. Formato es-ES.
+Dibuja un **gráfico de barras** con 4 columnas (Precio +5%, Precio −5%, Ocupación +10%, Ocupación −10%).  
+Muestra la cifra de margen (en €) **encima** de cada barra (formato es-ES).
 Resultados:
 - +5% precio ⇒ margen: ${fEUR(sens.precio_up5)}
 - −5% precio ⇒ margen: ${fEUR(sens.precio_dn5)}
@@ -638,6 +643,14 @@ Insight: ${safe(ia.sensibilidades)}
 • Riesgo principal: demora en maduración comercial y dependencia del flujo asegurado.
 
 ---
+# Ratios financieros clave
+| Indicador | Valor | Interpretación |
+|---|---:|---|
+| Payback | ${paybackTxt} | Recuperación de inversión por flujo acumulado |
+| Caja / Ingresos | ${ratioCajaSobreIngresos!=null ? pct1(ratioCajaSobreIngresos) : "—"} | Holgura de liquidez frente a escala de negocio |
+| VAN | ${van!=null ? fEUR(van) : "—"} | Valor creado al descuento actual |
+
+---
 # Rendimiento por profesional (Top 5)
 | Médico | Módulos | Ticket Medio | Margen | Insight |
 |---|---:|---:|---:|---|
@@ -651,10 +664,7 @@ ${safe(ia.recomendaciones_financieras)}
 
 ---
 # Conclusiones finales
-• Rentabilidad proyectada ${roiFinal!=null ? pct1(roiFinal) : "—"} con margen medio ${pct1(margenPct)}.  
-• ${ (dd.mesBE!=null) ? `Break-even previsto en el mes ${dd.mesBE}.` : "Break-even dentro del horizonte modelado según evolución del margen." }  
-• Escenario optimista robusto y pesimista todavía sostenible con ajustes.  
-• Revisión trimestral de KPIs y calibración de supuestos recomendada.
+${conclusiones}
 
 ---
 # Próximos pasos sugeridos
