@@ -1,26 +1,49 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const fmt = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-  const pct = (v) => (isFinite(v) ? `${(v*100).toFixed(1)}%` : '—');
-  const pcts = (v) => (isFinite(v) ? `${v.toFixed(1)}%` : '—'); // ya en 0-100
+  const eur = (n) => (isFinite(n) ? fmt.format(Number(n)) : '—');
+  const pcts = (v) => (isFinite(v) ? `${v.toFixed(1)} %` : '—');
+  const pct100 = (v) => (isFinite(v) ? `${(v * 100).toFixed(1)} %` : '—');
+  const sum = (arr) => (arr || []).reduce((a, b) => a + (Number(b) || 0), 0);
 
-  function eur(n){ try{ return fmt.format(Number(n||0)); }catch{ return String(n);} }
-  function beText(d){ return d?.beMes ? `Mes ${d.beMes} (${d.monthLabels?.[d.beMes-1]||''})` : 'No alcanzado'; }
-  function sum(arr){ return (arr||[]).reduce((a,b)=> a + (Number(b)||0), 0); } // sumar NO es recalcular el modelo, es presentar
+  function beText(d) {
+    return d?.beMes ? `Mes ${d.beMes} (${d.monthLabels?.[d.beMes - 1] || ''})` : 'No alcanzado';
+  }
 
-  // Detecta charts comunes de tu index; si no están, omite la imagen.
+  // --- Plugin para fondo blanco en todos los charts ---
+  const pluginBg = {
+    id: 'bg',
+    beforeDraw: (chart) => {
+      const { ctx, chartArea: { left, top, width, height } = {} } = chart;
+      if (!ctx || !width || !height) return;
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(left, top, width, height);
+      ctx.restore();
+    },
+  };
+
+  // --- Exportar imagen base64 JPEG con fondo blanco ---
   function imgFromChart(selector) {
     const cv = document.querySelector(selector);
     if (!cv) return '';
     const chart = cv.chart || cv.__chart || (window.Chart && Chart.getChart(cv));
+    if (!chart) return '';
     try {
-      const url = chart?.toBase64Image();
+      // Añade plugin temporalmente para pintar fondo
+      if (!chart.options.plugins) chart.options.plugins = {};
+      chart.options.plugins.bg = pluginBg;
+      chart.update();
+      const url = chart.toBase64Image('image/jpeg', 0.9);
       return url ? `![${selector}](${url})` : '';
-    } catch { return ''; }
+    } catch {
+      return '';
+    }
   }
 
+  // --- Leer supuestos del index ---
   function leerSupuestos() {
-    const v = (id, def=0) => Number($(id)?.value ?? def);
+    const v = (id, def = 0) => Number($(id)?.value ?? def);
     const on = (id) => !!($(id)?.checked);
     return {
       empresa: $('empresaNombre')?.value || '—',
@@ -35,20 +58,24 @@
       finInteres: v('finInteres'),
       finPlazo: v('finPlazo'),
       finCarencia: v('finCarencia'),
-      escenario: $('nombreEscenario')?.value || $('escenarioNombre')?.value || 'Escenario base'
+      escenario: $('nombreEscenario')?.value || $('escenarioNombre')?.value || 'Escenario base',
     };
   }
 
-  function tablaMeses(d, meses=12) {
+  // --- Tabla mensual con fallback de costes ---
+  function tablaMeses(d, meses = 12) {
     const rows = ['Mes\tPacientes\tIngresos\tCostes\tEBITDA\tFlujo\tAcumulado'];
-    const n = Math.min(meses, (d?.mesesArr||[]).length);
-    for (let i=0;i<n;i++){
+    const n = Math.min(meses, (d?.mesesArr || []).length);
+    for (let i = 0; i < n; i++) {
+      const ing = d.ingresos?.[i] ?? 0;
+      const ebt = d.ebitda?.[i] ?? 0;
+      const cos = d.costes?.[i] ?? (ing - ebt); // fallback coherente
       rows.push([
-        d.monthLabels?.[i] ?? `Mes ${i+1}`,
+        d.monthLabels?.[i] ?? `Mes ${i + 1}`,
         d.pacientesEfectivos?.[i] ?? 0,
-        Math.round(d.ingresos?.[i] ?? 0),
-        Math.round(d.costes?.[i] ?? 0),
-        Math.round(d.ebitda?.[i] ?? 0),
+        Math.round(ing),
+        Math.round(cos),
+        Math.round(ebt),
         Math.round(d.flujoNeto?.[i] ?? 0),
         Math.round(d.flujoAcum?.[i] ?? 0),
       ].join('\t'));
@@ -56,18 +83,21 @@
     return rows.join('\n');
   }
 
-  function anexoCSV(d){
-    // CSV mensual completo (por si quieres pegarlo en Gamma como anexo)
-    const headers = ['Mes','Pacientes','Ingresos','Costes','EBITDA','Flujo','Acumulado'];
-    const n = (d?.mesesArr||[]).length;
+  // --- CSV anexo completo ---
+  function anexoCSV(d) {
+    const headers = ['Mes', 'Pacientes', 'Ingresos', 'Costes', 'EBITDA', 'Flujo', 'Acumulado'];
+    const n = (d?.mesesArr || []).length;
     const lines = [headers.join(',')];
-    for (let i=0;i<n;i++){
+    for (let i = 0; i < n; i++) {
+      const ing = d.ingresos?.[i] ?? 0;
+      const ebt = d.ebitda?.[i] ?? 0;
+      const cos = d.costes?.[i] ?? (ing - ebt);
       lines.push([
-        d.monthLabels?.[i] ?? `Mes ${i+1}`,
+        d.monthLabels?.[i] ?? `Mes ${i + 1}`,
         d.pacientesEfectivos?.[i] ?? 0,
-        Math.round(d.ingresos?.[i] ?? 0),
-        Math.round(d.costes?.[i] ?? 0),
-        Math.round(d.ebitda?.[i] ?? 0),
+        Math.round(ing),
+        Math.round(cos),
+        Math.round(ebt),
         Math.round(d.flujoNeto?.[i] ?? 0),
         Math.round(d.flujoAcum?.[i] ?? 0),
       ].join(','));
@@ -75,34 +105,35 @@
     return lines.join('\n');
   }
 
+  // --- Prompt principal para Gamma ---
   function buildGammaPrompt(d) {
     if (!d) throw new Error('No hay análisis calculado. Genera el análisis primero.');
     const S = leerSupuestos();
 
-    // KPIs (tal cual de lastData)
+    // KPIs principales
     const kpis = [
       `• Break-even (caja): **${beText(d)}**`,
       `• ROI final: **${pcts(d.roiFinal)}**`,
       `• VAN (NPV): **${eur(d.npvVal)}**`,
-      `• TIR anual: **${pcts((d.irrAnual||0)*100)}**`,
-      `• Necesidad máx. de caja: **${eur(d.necesidadMaxCaja)}**${d.mesMinCaja?` (${d.mesMinCaja})`:''}`,
+      `• TIR anual: **${pct100(d.irrAnual)}**`,
+      `• Necesidad máx. de caja: **${eur(d.necesidadMaxCaja)}**${d.mesMinCaja ? ` (${d.mesMinCaja})` : ''}`,
       d.paybackMeses ? `• Payback: **${d.paybackMeses} meses**` : null,
     ].filter(Boolean).join('\n');
 
-    // Agregados (presentación)
-    const ingreso12 = sum((d.ingresos||[]).slice(0,12));
-    const ebitda12  = sum((d.ebitda||[]).slice(0,12));
-    const flujo12   = sum((d.flujoNeto||[]).slice(0,12));
+    // Agregados de presentación (año 1)
+    const ingreso12 = sum((d.ingresos || []).slice(0, 12));
+    const ebitda12 = sum((d.ebitda || []).slice(0, 12));
+    const flujo12 = sum((d.flujoNeto || []).slice(0, 12));
 
-    // Gráficos como imágenes (si existen en la página)
-    const imgCash   = imgFromChart('#chartCash, canvas#chartCash');
-    const imgPL     = imgFromChart('#chartPL, canvas#chartPL');
-    const imgKPIs   = imgFromChart('#chartKPIs, canvas#chartKPIs');
+    // Gráficos como imágenes
+    const imgCash = imgFromChart('#chartCash, canvas#chartCash');
+    const imgPL = imgFromChart('#chartPL, canvas#chartPL');
+    const imgKPIs = imgFromChart('#chartKPIs, canvas#chartKPIs');
 
-    // Bloques de narrativa (sin tocar números)
+    // Narrativa
     const riesgos = [
-      '- **Liquidez**: tramo hasta necesidad máxima de caja, riesgo si ventas se retrasan o sube el DSO.',
-      '- **Demanda**: sensibilidad elevada si pacientes efectivos ↓ 10–15% respecto al plan.',
+      '- **Liquidez**: tramo hasta necesidad máxima de caja; riesgo si las ventas se retrasan o sube el DSO.',
+      '- **Demanda**: sensibilidad elevada si pacientes efectivos ↓ 10–15 % respecto al plan.',
       '- **Financiación**: fin de carencia y repago elevan outflows; revisar calendario de deuda.',
       '- **Costes variables**: margen sensible a material/insumos y % variable de médicos.',
     ].join('\n');
@@ -111,25 +142,20 @@
       '- **Aceleradores de demanda**: campañas de captación vinculadas a capacidad ociosa.',
       '- **Optimización del mix**: priorizar tratamientos de mayor margen/tiempo.',
       '- **Cobro**: reducir DSO (convenios con aseguradoras o anticipos).',
-      '- **Gasto**: revisar costes fijos >3% de ingresos y renegociar insumos.',
+      '- **Gasto**: revisar costes fijos >3 % de ingresos y renegociar insumos.',
     ].join('\n');
 
     const supuestos = [
       `- CAPEX: ${eur(S.capex)} · Horizonte: ${S.meses} meses`,
-      `- DSO aseguradoras: ${S.dsoOn ? (S.dsoDias+' días') : 'No aplicado'}`,
-      `- Impuesto sociedades: ${S.impOn ? (S.impPct+'%') : 'No aplicado'}`,
-      `- Financiación CAPEX: Importe ${eur(S.finImporte)} · Interés ${S.finInteres}% · Plazo ${S.finPlazo}m · Carencia ${S.finCarencia}m`,
+      `- DSO aseguradoras: ${S.dsoOn ? `${S.dsoDias} días` : 'No aplicado'}`,
+      `- Impuesto sociedades: ${S.impOn ? `${S.impPct} %` : 'No aplicado'}`,
+      `- Financiación CAPEX: Importe ${eur(S.finImporte)} · Interés ${S.finInteres} % · Plazo ${S.finPlazo} m · Carencia ${S.finCarencia} m`,
       `- Escenario: ${S.escenario}`,
       `> Nota: **Break-even de caja** (primer mes con flujo acumulado ≥ 0). No recalcular métricas.`,
     ].join('\n');
 
-    // Tabla (primer año)
     const tablaY1 = tablaMeses(d, 12);
-
-    // Anexo CSV (todo el horizonte)
     const csv = anexoCSV(d);
-
-    // Texto ya generado por tu herramienta (si lo tienes)
     const analisis = (d.analisisTexto || '').replace(/<[^>]*>/g, '').trim();
 
     return `# OptimClinic – Informe Financiero para Gamma
@@ -137,7 +163,7 @@ Cliente: ${S.empresa}
 Responsable: ${S.responsable}
 Fecha: ${new Date().toLocaleDateString('es-ES')}
 
-## 0) Guía de maquetación (no mostrar en la presentación)
+## 0) Guía de maquetación (no mostrar)
 - Formato: 16:9, estilo consultoría.
 - Portada minimal + índice + bloques con 1 idea principal/slide.
 - Tablas legibles (es-ES, símbolo €).
@@ -173,11 +199,11 @@ ${tablaY1}
 Total Año 1: Ingresos ${eur(ingreso12)}, EBITDA ${eur(ebitda12)}, Flujo ${eur(flujo12)}.
 
 ## 8) Financiación y calendario de deuda
-- Carencia: ${S.finCarencia} meses · Tipo: ${S.finInteres}% · Plazo: ${S.finPlazo} meses.
+- Carencia: ${S.finCarencia} meses · Tipo: ${S.finInteres} % · Plazo: ${S.finPlazo} meses.
 - Señalar salto de outflows al finalizar carencia y su impacto en caja.
 
-## 9) Sensibilidades (narrativa sin cálculo)
-- Ventas ±10%: impacto directo en BE y necesidad de caja.
+## 9) Sensibilidades (narrativa)
+- Ventas ±10 %: impacto directo en BE y necesidad de caja.
 - DSO +15 días: desplaza BE y puede exigir circulante adicional.
 - Coste variable +2 pp: erosiona margen y eleva payback.
 *(Gamma: describir efectos cualitativos usando los KPIs facilitados, sin recalcular.)*
@@ -194,7 +220,7 @@ ${palancas}
 ## 13) Conclusión
 Mensaje síntesis: viabilidad, ventanas de riesgo y foco ejecutivo.
 
-## 14) Anexo – Tabla completa (CSV pegado)
+## 14) Anexo – Tabla completa (CSV)
 \`\`\`csv
 ${csv}
 \`\`\`
@@ -207,13 +233,14 @@ ${csv}
 `;
   }
 
-  // UI handlers existentes
+  // --- UI handlers ---
   $('btnDossierFin')?.addEventListener('click', function () {
     if (!window.lastData) { alert('Pulsa "📊 Generar Análisis Completo" primero.'); return; }
     const prompt = buildGammaPrompt(window.lastData);
     $('taPrompt').value = prompt;
     $('modalPrompt').style.display = 'block';
   });
+
   $('btnCopy')?.addEventListener('click', () => navigator.clipboard.writeText($('taPrompt').value));
   $('btnClose')?.addEventListener('click', () => { $('modalPrompt').style.display = 'none'; });
   $('btnDownload')?.addEventListener('click', () => {
@@ -224,6 +251,6 @@ ${csv}
     a.click();
   });
 
-  // export opcional en window
+  // export opcional
   window.buildGammaPrompt = buildGammaPrompt;
 })();
