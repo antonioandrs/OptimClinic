@@ -2536,123 +2536,157 @@ function exportMasterReportPDF(){
 
 document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDFjsPDF);
 
-async function exportFinancialPDFjsPDF(){
-  if(!lastData){ alert('Genera primero el análisis financiero.'); return; }
-  const d = lastData;
-
+async function exportFinancialPDFjsPDF() {
+  if (!window.jspdf || !lastData) { alert('Genera primero el análisis'); return; }
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
+
+  const SHOW_DATE = false;
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
-  const margin = 28;
+  const margin = 36;
+  let y = margin;
 
-  const beTxt   = d.beMes ? `Mes ${d.beMes} (${d.monthLabels[d.beMes-1]})` : 'No alcanzado';
-  const irrTxt  = isFinite(d.irrAnual) ? (d.irrAnual*100).toFixed(1)+'%' : '—';
-  const roiTxt  = isFinite(d.roiFinal) ? d.roiFinal.toFixed(1)+'%' : '—';
-  const npvTxt  = eur(d.npvVal);
-  const cajaTxt = eur(d.necesidadMaxCaja) + (d.mesMinCaja ? ` (${d.mesMinCaja})` : '');
-
-  const capex        = num('capex');
-  const mesesH       = d.mesesArr.length;
-  const finImporte   = num('finImporte');
-  const finInteres   = num('finInteres');
-  const finPlazo     = num('finPlazo');
-  const finCarencia  = num('finCarencia');
-  const dsoDias      = document.getElementById('toggleDSO').checked ? num('dsoAseg') : 0;
-  const impSocTxt    = document.getElementById('toggleImp').checked ? (num('impSoc').toFixed(1)+'%') : '—';
-  const logoSrc      = document.querySelector('.logo img')?.src || '';
-
-  // ====== Portada / resumen ======
-  // Logo (opcional)
-  await addImageIfPossible(doc, logoSrc, margin, margin, 64, 64);
-
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
-  doc.text('Informe Financiero – Escenario Base', margin + 80, margin + 20);
-
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(new Date().toLocaleDateString('es-ES'), margin + 80, margin + 36);
-  doc.setTextColor(0);
-
-  // Supuestos
-  const sup = [
-    `CAPEX: ${eur(capex)} · Horizonte: ${mesesH} meses`,
-    `Financiación: ${finImporte>0 ? `${eur(finImporte)} · ${finInteres.toFixed(1)}% · ${finPlazo}m${finCarencia?` · ${finCarencia}m carencia`:''}` : 'Sin financiación'}`,
-    `DSO aseguradoras: ${dsoDias ? dsoDias+' días' : 'No aplica'} · Impuesto sociedades: ${impSocTxt}`
-  ];
-  doc.setFontSize(11);
-  doc.text(sup, margin, margin + 100);
-
-  // KPIs
-  const kpiY = margin + 140;
-  const kpis = [
-    ['Break-even', beTxt],
-    ['ROI Final', roiTxt],
-    ['VAN (NPV)', npvTxt],
-    ['TIR Anual', irrTxt],
-    ['Necesidad máx. caja', cajaTxt],
-  ];
-  drawKPIs(doc, kpis, margin, kpiY, pageW - margin*2);
-
-  // Gráficos (si existen)
-  let yCharts = kpiY + 90;
-  const imgPnl  = (charts.pnl  && charts.pnl.toBase64Image)  ? charts.pnl.toBase64Image()  : '';
-  const imgCash = (charts.cash && charts.cash.toBase64Image) ? charts.cash.toBase64Image() : '';
-  const chartW = (pageW - margin*3) / 2, chartH = 180;
-
-  if (imgPnl || imgCash){
-    if (imgPnl) doc.addImage(imgPnl, 'PNG', margin, yCharts, chartW, chartH, undefined, 'FAST');
-    if (imgCash) doc.addImage(imgCash, 'PNG', margin*2 + chartW, yCharts, chartW, chartH, undefined, 'FAST');
-    yCharts += chartH + 10;
+  async function imgToDataURL(url) {
+    const res = await fetch(url, { mode: 'cors' });
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.readAsDataURL(blob);
+    });
   }
 
-  // Pie de página con número (sin URL/fecha del navegador)
-  addFooter(doc);
-  doc.addPage('a4', 'landscape');
+  const title = 'Informe Financiero – Escenario Base';
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.text(title, pageW / 2, y, { align: 'center' });
 
-  // ====== Tabla completa (TODAS las columnas) ======
+  if (SHOW_DATE) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    const fecha = new Date().toLocaleDateString('es-ES');
+    doc.text(fecha, pageW - margin, y, { align: 'right' });
+  }
+  y += 22;
+
+  const logoEl = document.querySelector('.logo img');
+  if (logoEl && logoEl.src) {
+    try {
+      const dataUrl = await imgToDataURL(logoEl.src);
+      doc.addImage(dataUrl, 'JPEG', margin, margin - 4, 48, 48);
+    } catch {}
+  }
+
+  const d = lastData;
+  function eurFmt(n) {
+    const x = Math.round(Number(n || 0));
+    return x.toLocaleString('es-ES') + ' €';
+  }
+  function intFmt(n) {
+    return Math.round(Number(n || 0)).toLocaleString('es-ES');
+  }
+  function pctFmt(n) {
+    return (isFinite(n) ? n.toFixed(1) : 0) + '%';
+  }
+
+  const capex = document.getElementById('capex')?.value || 0;
+  const meses = d.mesesArr.length;
+  const finImporte = document.getElementById('finImporte')?.value || 0;
+  const finInteres = document.getElementById('finInteres')?.value || 0;
+  const finPlazo = document.getElementById('finPlazo')?.value || 0;
+  const dsoTxt = document.getElementById('toggleDSO')?.checked ? (document.getElementById('dsoAseg')?.value + ' días') : 'No aplica';
+  const impTxt = document.getElementById('toggleImp')?.checked ? (Number(document.getElementById('impSoc')?.value || 0).toFixed(1) + '%') : '—';
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+  doc.text('Supuestos principales:', margin + 60, y);
+  y += 14;
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  const lines = [
+    `CAPEX: ${eurFmt(capex)} · Horizonte: ${meses} meses`,
+    `Financiación: ${eurFmt(finImporte)} · ${Number(finInteres).toFixed(1)}% · ${finPlazo}m`,
+    `DSO aseguradoras: ${dsoTxt} · Impuesto sociedades: ${impTxt}`
+  ];
+  lines.forEach(L => { doc.text(L, margin + 60, y); y += 14; });
+
+  y += 6;
+
+  const kpiW = (pageW - margin*2) / 5;
+  const kpiData = [
+    ['Break-even', d.beMes ? `Mes ${d.beMes}` : 'No alcanzado'],
+    ['ROI Final', pctFmt(d.roiFinal)],
+    ['VAN (NPV)', eurFmt(d.npvVal)],
+    ['TIR Anual', isFinite(d.irrAnual) ? pctFmt(d.irrAnual*100) : '—'],
+    ['Necesidad máx. caja', `${eurFmt(d.necesidadMaxCaja)}${d.mesMinCaja ? ' ('+d.mesMinCaja+')' : ''}`]
+  ];
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+  for (let i=0;i<kpiData.length;i++){
+    const x = margin + i*kpiW;
+    doc.text(kpiData[i][0], x, y);
+  }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(14);
+  y += 16;
+  for (let i=0;i<kpiData.length;i++){
+    const x = margin + i*kpiW;
+    doc.text(String(kpiData[i][1]), x, y);
+  }
+  y += 22;
+
   const head = [[
-    'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos','EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
+    'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos',
+    'EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
   ]];
 
   const body = d.mesesArr.map((_, i) => ([
     d.monthLabels[i],
-    (d.pacientesPlanif[i]||0).toLocaleString('es-ES'),
-    d.pacientesEfectivos[i].toLocaleString('es-ES'),
-    eur(d.ingresos[i]),
-    eur(d.ingresosColab?.[i]||0),
-    eur(d.cVariables[i]),
-    eur(d.cfMensual[i]),
-    eur(d.ebitda[i]),
-    eur(d.amortArr[i]),
-    eur(d.ebit[i]),
-    eur(d.intereses[i]),
-    eur(d.impuestos[i]),
-    eur(d.principal[i]),
-    eur(d.flujoNeto[i]),
-    eur(d.flujoAcum[i]),
+    intFmt(d.pacientesPlanif[i]),
+    intFmt(d.pacientesEfectivos[i]),
+    eurFmt(d.ingresos[i]),
+    eurFmt(d.ingresosColab?.[i] || 0),
+    eurFmt(d.cVariables[i]),
+    eurFmt(d.cfMensual[i]),
+    eurFmt(d.ebitda[i]),
+    eurFmt(d.amortArr[i]),
+    eurFmt(d.ebit[i]),
+    eurFmt(d.intereses[i]),
+    eurFmt(d.impuestos[i]),
+    eurFmt(d.principal[i]),
+    eurFmt(d.flujoNeto[i]),
+    eurFmt(d.flujoAcum[i])
   ]));
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
-  doc.text('Detalle mensual (todos los meses)', margin, margin);
+  const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
 
   doc.autoTable({
-    startY: margin + 10,
     head,
     body,
-    styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
-    headStyles: { fillColor: [241,245,249], textColor: 0, lineWidth: 0.5, lineColor: [229,231,235] },
-    bodyStyles: { lineWidth: 0.25, lineColor: [229,231,235] },
-    columnStyles: {
-      1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},
-      6:{halign:'right'},7:{halign:'right'},8:{halign:'right'},9:{halign:'right'},10:{halign:'right'},
-      11:{halign:'right'},12:{halign:'right'},13:{halign:'right'},14:{halign:'right'}
+    startY: y,
+    theme: 'grid',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [37,99,235], textColor: 255 },
+    columnStyles: Object.fromEntries(rightCols.map(c => [c, { halign: 'right' }])),
+    didParseCell: function(data) {
+      const col = data.column.index;
+      if (data.section === 'body') {
+        if (col === 7 || col === 13 || col === 14) {
+          const raw = [d.ebitda, d.flujoNeto, d.flujoAcum][[7,13,14].indexOf(col)][data.row.index];
+          if (raw < 0) data.cell.styles.textColor = [220,38,38];
+          if (raw > 0) data.cell.styles.textColor = [5,150,105];
+        }
+      }
     },
     margin: { left: margin, right: margin },
-    didDrawPage: (data) => addFooter(doc)
+    didDrawPage: function (data) {
+      const str = 'Página ' + doc.internal.getNumberOfPages();
+      doc.setFontSize(9);
+      doc.text(str, pageW - margin, doc.internal.pageSize.getHeight() - 12, { align: 'right' });
+    }
   });
 
   doc.save('Informe_Financiero.pdf');
 }
+
 
 function addFooter(doc){
   const pageCount = doc.getNumberOfPages();
