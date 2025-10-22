@@ -11,6 +11,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 
   <style>
     :root {
@@ -464,6 +466,26 @@
                 <tbody></tbody>
               </table>
             </div>
+
+<!-- Card resumen descargable a PDF -->
+<div id="detalleCompleto" class="card p-4" style="margin-top:1rem; padding:1rem;">
+  <div class="flex items-center justify-between mb-3" style="display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem;">
+    <img src="img/logo-clinica.png" alt="Logo" style="height: 40px;">
+    <h2 class="text-xl font-semibold" style="margin:0;">Informe Financiero – Escenario Base</h2>
+  </div>
+
+  <p class="text-gray-600 mb-2" style="margin:0 0 .75rem; color:#475569;">
+    <strong>Supuestos principales:</strong><br>
+    CAPEX: <span id="supCapex"></span> · Horizonte: <span id="supMeses"></span> meses<br>
+    Financiación: <span id="supFinanciacion"></span><br>
+    DSO aseguradoras: <span id="supDSO"></span> · Impuesto sociedades: <span id="supImp"></span>
+  </p>
+
+  <div id="tablaDetalle"></div>
+
+  <button id="btnPDFDetalle" class="btn btn-secondary" style="margin-top: .75rem;">📄 Descargar PDF</button>
+</div>
+
 
             <div class="divider"></div>
             <h3 style="margin:2rem 0 1rem">💧 Resumen de Caja</h3>
@@ -1347,8 +1369,56 @@ cells.forEach(function(txt, idx) {
       card('Pagos Fijos', eur(d.totalFijos));
       card('Necesidad máx. caja', eur(d.necesidadMaxCaja), 'Mes: ' + d.mesMinCaja);
 
-      setTimeout(function(){ renderTornadoChart(); initSimulator(); }, 100);
+      setTimeout(function(){ renderTornadoChart(); initSimulator(); }, 100); renderDetalleCompleto(); // ← para rellenar el card cada vez que pintas
+
     }
+
+function renderDetalleCompleto(){
+  if(!lastData) return;
+  const d = lastData;
+
+  // Supuestos
+  const finImporte   = num('finImporte');
+  const finInteres   = num('finInteres');
+  const finPlazo     = num('finPlazo');
+  const finCarencia  = num('finCarencia');
+  const dsoDias      = getEl('toggleDSO').checked ? num('dsoAseg') : 0;
+  const impSocTxt    = getEl('toggleImp').checked ? (num('impSoc').toFixed(1) + '%') : '—';
+
+  (getEl('supCapex')||{}).textContent        = eur(num('capex'));
+  (getEl('supMeses')||{}).textContent        = d.mesesArr.length;
+  (getEl('supFinanciacion')||{}).textContent = finImporte>0 ? `${eur(finImporte)} · ${finInteres.toFixed(1)}% · ${finPlazo}m${finCarencia?` · ${finCarencia}m carencia`:''}` : 'Sin financiación';
+  (getEl('supDSO')||{}).textContent          = dsoDias ? `${dsoDias} días` : 'No aplica';
+  (getEl('supImp')||{}).textContent          = impSocTxt;
+
+  // Tabla (12 meses)
+  const n = Math.min(12, d.mesesArr.length);
+  let html = `
+    <table class="table" style="width:100%; border-collapse:collapse; font-size:.85rem; margin-top:.5rem;">
+      <thead>
+        <tr>
+          <th>Mes</th><th>Efectivos</th><th>Ingresos</th><th>EBITDA</th><th>Flujo</th><th>Acum.</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for(let i=0;i<n;i++){
+    html += `
+      <tr>
+        <td>${d.monthLabels[i]}</td>
+        <td style="text-align:right">${d.pacientesEfectivos[i].toLocaleString('es-ES')}</td>
+        <td style="text-align:right">${eur(d.ingresos[i])}</td>
+        <td style="text-align:right; ${d.ebitda[i]>=0?'color:#059669':'color:#dc2626'}">${eur(d.ebitda[i])}</td>
+        <td style="text-align:right; ${d.flujoNeto[i]>=0?'color:#059669':'color:#dc2626'}">${eur(d.flujoNeto[i])}</td>
+        <td style="text-align:right; ${d.flujoAcum[i]>=0?'color:#059669':'color:#dc2626'}"><strong>${eur(d.flujoAcum[i])}</strong></td>
+      </tr>
+    `;
+  }
+  html += `</tbody></table>`;
+  const wrap = getEl('tablaDetalle');
+  if (wrap) wrap.innerHTML = html;
+}
+
 
     /* ===================== TAB SWITCHING ===================== */
     function switchTab(tabName) {
@@ -1366,7 +1436,6 @@ cells.forEach(function(txt, idx) {
     /* ===================== COMPETITORS ===================== */
 /* ========== ANÁLISIS DE COMPETIDORES (ACTUALIZADO) ========== */
 
-var competitors = [];
 var competitorsData = [];
 
 function addCompetitor() {
@@ -2359,12 +2428,28 @@ function exportMasterReportPDF(){
   d.amortArr[i], d.ebit[i], d.intereses[i], d.impuestos[i],
   d.principal[i], d.flujoNeto[i], d.flujoAcum[i]
 ]);
+
       });
       var wb = XLSX.utils.book_new();
       var ws = XLSX.utils.aoa_to_sheet(data);
       XLSX.utils.book_append_sheet(wb, ws, 'Análisis');
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
+
+document.getElementById('btnPDFDetalle')?.addEventListener('click', () => {
+  const element = document.getElementById('detalleCompleto');
+  if (!element) { alert('No encuentro #detalleCompleto'); return; }
+  html2pdf()
+    .set({
+      margin: 10,
+      filename: 'Detalle_Mensual.pdf',
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    })
+    .from(element)
+    .save();
+});
 
     /* ===================== INICIALIZACIÓN ===================== */
     (function initStartMonth(){
@@ -2380,20 +2465,6 @@ function exportMasterReportPDF(){
       render(); 
     }, 200);
 // ========== ADMIN: SCRAPER DE DOCTORALIA ==========
-(function initAdminScraper() {
-  let adminClicks = 0;
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'A') {
-      adminClicks++;
-      if (adminClicks >= 3) {
-        document.getElementById('adminScraperBtn').style.display = 'block';
-        console.log('Modo admin activado'); // SIN EMOJI
-        adminClicks = 0;
-      }
-      setTimeout(() => { adminClicks = 0; }, 2000);
-    }
-  });
-})();
 
 document.getElementById('adminScraperBtn')?.addEventListener('click', async function() {
   const provincia = document.getElementById('provincia').value;
@@ -2500,6 +2571,8 @@ function mostrarDatosTemporales(data) {
   });
 })();
   </script>
+
+
 <!-- NUEVO: generador de prompt para Gamma -->
   <script src="api/gamma-prompt.js"></script>
 </body>

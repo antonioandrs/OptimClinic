@@ -1,256 +1,234 @@
+/* api/gamma-prompt.js
+   Genera un prompt listo para Gamma (presentación 16:9) a partir del estado actual de OptimClinic.
+   No usa módulos ES: se auto-registra en window y cablea la UI existente (#btnDossierFin + modal).
+*/
 (function () {
   const $ = (id) => document.getElementById(id);
-  const fmt = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-  const eur = (n) => (isFinite(n) ? fmt.format(Number(n)) : '—');
-  const pcts = (v) => (isFinite(v) ? `${v.toFixed(1)} %` : '—');
-  const pct100 = (v) => (isFinite(v) ? `${(v * 100).toFixed(1)} %` : '—');
-  const sum = (arr) => (arr || []).reduce((a, b) => a + (Number(b) || 0), 0);
+  const safe = (v, d = "") => (v === null || v === undefined || v === "" ? d : v);
 
-  function beText(d) {
-    return d?.beMes ? `Mes ${d.beMes} (${d.monthLabels?.[d.beMes - 1] || ''})` : 'No alcanzado';
-  }
+  // --- Serializa el estado actual desde tu UI / cálculos ---
+  function serializeForGamma() {
+    const empresa = ($('empresaNombre')?.value || 'Clínica').trim();
+    const responsable = ($('responsableNombre')?.value || '').trim();
+    const fecha = new Date().toISOString().slice(0, 10);
 
-  // --- Plugin para fondo blanco en todos los charts ---
-  const pluginBg = {
-    id: 'bg',
-    beforeDraw: (chart) => {
-      const { ctx, chartArea: { left, top, width, height } = {} } = chart;
-      if (!ctx || !width || !height) return;
-      ctx.save();
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(left, top, width, height);
-      ctx.restore();
-    },
-  };
-
-  // --- Exportar imagen base64 JPEG con fondo blanco ---
-  function imgFromChart(selector) {
-    const cv = document.querySelector(selector);
-    if (!cv) return '';
-    const chart = cv.chart || cv.__chart || (window.Chart && Chart.getChart(cv));
-    if (!chart) return '';
-    try {
-      // Añade plugin temporalmente para pintar fondo
-      if (!chart.options.plugins) chart.options.plugins = {};
-      chart.options.plugins.bg = pluginBg;
-      chart.update();
-      const url = chart.toBase64Image('image/jpeg', 0.9);
-      return url ? `![${selector}](${url})` : '';
-    } catch {
-      return '';
-    }
-  }
-
-  // --- Leer supuestos del index ---
-  function leerSupuestos() {
-    const v = (id, def = 0) => Number($(id)?.value ?? def);
-    const on = (id) => !!($(id)?.checked);
-    return {
-      empresa: $('empresaNombre')?.value || '—',
-      responsable: $('responsableNombre')?.value || '—',
-      capex: v('capex'),
-      meses: v('meses', 36),
-      dsoOn: on('toggleDSO'),
-      dsoDias: v('dsoAseg'),
-      impOn: on('toggleImp'),
-      impPct: v('impSoc'),
-      finImporte: v('finImporte'),
-      finInteres: v('finInteres'),
-      finPlazo: v('finPlazo'),
-      finCarencia: v('finCarencia'),
-      escenario: $('nombreEscenario')?.value || $('escenarioNombre')?.value || 'Escenario base',
+    // Bloque "Inteligencia de mercado" (tomado de tu UI)
+    const mercado = {
+      provincia: $('provinciaActual')?.textContent || $('provincia')?.value || '',
+      rangoConsulta: $('rangoConsulta')?.textContent || '',
+      mixPrivado: $('mixPrivado')?.textContent || '',
+      crecimiento: $('crecimientoSector')?.textContent || '',
+      dso: $('dsoPromedio')?.textContent || ''
     };
+
+    // Entradas financieras actuales (UI)
+    const entradas = {
+      capex: num('capex'),
+      meses: num('meses'),
+      mes_inicio: $('mesInicio')?.value || '',
+      financ: {
+        principal: num('finImporte'),
+        interes_anual_pct: num('finInteres'),
+        plazo_meses: num('finPlazo'),
+        carencia_meses: num('finCarencia')
+      },
+      precios: {
+        pctPriv: num('pctPriv'),
+        tarPriv: num('tarPriv'),
+        pctAseg: num('pctAseg'),
+        tarAseg: num('tarAseg'),
+        ticketMedio: num('ticketMedio'),
+        noShow_pct: num('noShow')
+      },
+      capacidad: {
+        profesionales: num('profesionales'),
+        horasDia: num('horasDia'),
+        diasMes: num('diasMes'),
+        minVisita: num('minVisita'),
+        capacidadCalc: num('capacidadCalc')
+      },
+      demanda: {
+        serviciosMes: num('serviciosMes'),
+        crecDemanda_pct_mes: num('crecDemanda'),
+        mktMes: num('mktMes'),
+        cpa: num('cpa')
+      },
+      costes: {
+        fijosMes: num('costesFijos'),
+        crecCF_anual_pct: num('crecCF'),
+        cVar_por_paciente: num('costeVariable')
+      },
+      impuestos_dso: {
+        imp_soc_pct: $('toggleImp')?.checked ? num('impSoc') : 0,
+        dso_aseg_dias: $('toggleDSO')?.checked ? num('dsoAseg') : 0
+      },
+      colaboradores: {
+        n: num('colabCount'),
+        alquiler_mes: num('colabAlquiler'),
+        share_pct: num('colabShare'),
+        horasDia: num('colabHorasDia'),
+        diasMes: num('colabDiasMes'),
+        minVisita: num('colabMinVisita'),
+        tarifaMedia: num('colabTarifa'),
+        pacientesIni: num('colabPacientesIni'),
+        crec_pct_mes: num('colabCrec')
+      }
+    };
+
+    // Resultados detallados calculados (tu variable global lastData)
+    const d = window.lastData || null;
+
+    const kpis = d ? {
+      breakeven_mes: d.beMes,
+      roi_pct: isFinite(d.roiFinal) ? Number(d.roiFinal) : null,
+      npv: Number(d.npvVal ?? null),
+      irr_anual_pct: isFinite(d.irrAnual) ? Number(d.irrAnual * 100) : null,
+      necesidad_max_caja: Number(d.necesidadMaxCaja ?? null),
+      mes_min_caja: d.mesMinCaja || null,
+      estado_rentabilidad: d.estadoRentabilidad || null,
+      margen_actual_pct: Number(d.margenActual ?? null),
+      precio_minimo: Number(d.precioMinimo ?? null),
+      pacientes_minimos_mes1: Number(d.pacientesMinimos ?? null),
+    } : {};
+
+    // Serie mensual (limitamos a 36 por comodidad en slides)
+    const tablaMensual = d ? d.mesesArr.map((_, i) => ({
+      mes: d.monthLabels[i],
+      pacientes_efectivos: d.pacientesEfectivos[i],
+      ingresos_totales: d.ingresos[i],
+      ingresos_colab: (d.ingresosColab?.[i] ?? 0),
+      c_var: d.cVariables[i],
+      c_fijos: d.cfMensual[i],
+      ebitda: d.ebitda[i],
+      flujo_mes: d.flujoNeto[i],
+      flujo_acum: d.flujoAcum[i]
+    })).slice(0, 36) : [];
+
+    // Palancas top (a partir del análisis de sensibilidad ya implementado)
+    const palancas = (() => {
+      try {
+        const imp = (window.calcularSensibilidad && window.calcularSensibilidad()) || [];
+        return imp.slice(0, 5).map(x => ({
+          variable: x.name,
+          variacion: (x.variation * 100) + '%',
+          impacto_positivo_pp: Number(x.positive?.toFixed?.(2) || x.positive || 0),
+          impacto_negativo_pp: Number(x.negative?.toFixed?.(2) || x.negative || 0)
+        }));
+      } catch { return []; }
+    })();
+
+    return {
+      meta: { empresa, responsable, fecha, herramienta: 'OptimClinic' },
+      mercado,
+      entradas,
+      kpis,
+      resumen_viabilidad_html: d?.analisisTexto || '',
+      mensual: tablaMensual,
+      palancas
+    };
+
+    function num(id) { const el = $(id); const v = Number(el && el.value || 0); return isFinite(v) ? v : 0; }
   }
 
-  // --- Tabla mensual con fallback de costes ---
-  function tablaMeses(d, meses = 12) {
-    const rows = ['Mes\tPacientes\tIngresos\tCostes\tEBITDA\tFlujo\tAcumulado'];
-    const n = Math.min(meses, (d?.mesesArr || []).length);
-    for (let i = 0; i < n; i++) {
-      const ing = d.ingresos?.[i] ?? 0;
-      const ebt = d.ebitda?.[i] ?? 0;
-      const cos = d.costes?.[i] ?? (ing - ebt); // fallback coherente
-      rows.push([
-        d.monthLabels?.[i] ?? `Mes ${i + 1}`,
-        d.pacientesEfectivos?.[i] ?? 0,
-        Math.round(ing),
-        Math.round(cos),
-        Math.round(ebt),
-        Math.round(d.flujoNeto?.[i] ?? 0),
-        Math.round(d.flujoAcum?.[i] ?? 0),
-      ].join('\t'));
+  // --- Construye el prompt completo para Gamma ---
+  function buildGammaPrompt(payload) {
+    const header = `
+# OptimClinic — Dossier Financiero y de Mercado
+Cliente: ${safe(payload.meta?.empresa, 'Clínica')}
+Fecha: ${safe(payload.meta?.fecha, new Date().toLocaleDateString('es-ES'))}
+Idioma: Español (es-ES)
+Formato: Presentación 16:9, estilo consultoría (titulares claros, 1 idea por slide, tablas legibles, bullets cortos).
+
+**Reglas**
+- No inventes datos: usa estrictamente el JSON adjunto.
+- Moneda: euros (formato es-ES, símbolo €).
+- Títulos breves; subtítulos con insight.
+- Evita enlaces externos o notas largas.
+`.trim();
+
+    const indice = `
+## Índice sugerido
+1. Resumen ejecutivo
+2. Situación financiera actual (KPIs, caja, break-even)
+3. Evolución mensual (ingresos, EBITDA, flujo)
+4. Sensibilidades y palancas (tornado)
+5. Mercado y posicionamiento (rango de precios, mix, DSO)
+6. Recomendaciones (90 días, riesgos, métricas de éxito)
+7. Anexo: Tabla mensual (detalle, sin redondeos agresivos)
+`.trim();
+
+    const tareas = `
+## Lo que quiero que generes
+- Portada profesional + resumen ejecutivo cuantificado.
+- Gráficos: 1 de KPIs, 1 de evolución, 1 de sensibilidad/palancas.
+- Tabla mensual legible (si hay >6-8 columnas, partir en 2).
+- Acciones a 90 días con dueño, plazo y KPI asociado.
+`.trim();
+
+    const jsonDatos = '```json\n' + JSON.stringify(payload, null, 2) + '\n```';
+    return `${header}\n\n${indice}\n\n${tareas}\n\n---\n**Datos (no mostrar en la presentación, solo como fuente):**\n${jsonDatos}`;
+  }
+
+  // --- Modal & acciones ---
+  function openModal(text) {
+    const modal = $('modalPrompt');
+    const ta = $('taPrompt');
+    if (!modal || !ta) return;
+    ta.value = text;
+    modal.style.display = 'block';
+    ta.scrollTop = 0;
+  }
+  function closeModal() {
+    const modal = $('modalPrompt');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async function copyPrompt() {
+    const ta = $('taPrompt');
+    if (!ta) return;
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      const btn = $('btnCopy'); if (btn) { btn.textContent = '¡Copiado!'; setTimeout(() => btn.textContent = 'Copiar', 1000); }
+    } catch {
+      ta.select(); document.execCommand('copy');
     }
-    return rows.join('\n');
   }
-
-  // --- CSV anexo completo ---
-  function anexoCSV(d) {
-    const headers = ['Mes', 'Pacientes', 'Ingresos', 'Costes', 'EBITDA', 'Flujo', 'Acumulado'];
-    const n = (d?.mesesArr || []).length;
-    const lines = [headers.join(',')];
-    for (let i = 0; i < n; i++) {
-      const ing = d.ingresos?.[i] ?? 0;
-      const ebt = d.ebitda?.[i] ?? 0;
-      const cos = d.costes?.[i] ?? (ing - ebt);
-      lines.push([
-        d.monthLabels?.[i] ?? `Mes ${i + 1}`,
-        d.pacientesEfectivos?.[i] ?? 0,
-        Math.round(ing),
-        Math.round(cos),
-        Math.round(ebt),
-        Math.round(d.flujoNeto?.[i] ?? 0),
-        Math.round(d.flujoAcum?.[i] ?? 0),
-      ].join(','));
-    }
-    return lines.join('\n');
-  }
-
-  // --- Prompt principal para Gamma ---
-  function buildGammaPrompt(d) {
-    if (!d) throw new Error('No hay análisis calculado. Genera el análisis primero.');
-    const S = leerSupuestos();
-
-    // KPIs principales
-    const kpis = [
-      `• Break-even (caja): **${beText(d)}**`,
-      `• ROI final: **${pcts(d.roiFinal)}**`,
-      `• VAN (NPV): **${eur(d.npvVal)}**`,
-      `• TIR anual: **${pct100(d.irrAnual)}**`,
-      `• Necesidad máx. de caja: **${eur(d.necesidadMaxCaja)}**${d.mesMinCaja ? ` (${d.mesMinCaja})` : ''}`,
-      d.paybackMeses ? `• Payback: **${d.paybackMeses} meses**` : null,
-    ].filter(Boolean).join('\n');
-
-    // Agregados de presentación (año 1)
-    const ingreso12 = sum((d.ingresos || []).slice(0, 12));
-    const ebitda12 = sum((d.ebitda || []).slice(0, 12));
-    const flujo12 = sum((d.flujoNeto || []).slice(0, 12));
-
-    // Gráficos como imágenes
-    const imgCash = imgFromChart('#chartCash, canvas#chartCash');
-    const imgPL = imgFromChart('#chartPL, canvas#chartPL');
-    const imgKPIs = imgFromChart('#chartKPIs, canvas#chartKPIs');
-
-    // Narrativa
-    const riesgos = [
-      '- **Liquidez**: tramo hasta necesidad máxima de caja; riesgo si las ventas se retrasan o sube el DSO.',
-      '- **Demanda**: sensibilidad elevada si pacientes efectivos ↓ 10–15 % respecto al plan.',
-      '- **Financiación**: fin de carencia y repago elevan outflows; revisar calendario de deuda.',
-      '- **Costes variables**: margen sensible a material/insumos y % variable de médicos.',
-    ].join('\n');
-
-    const palancas = [
-      '- **Aceleradores de demanda**: campañas de captación vinculadas a capacidad ociosa.',
-      '- **Optimización del mix**: priorizar tratamientos de mayor margen/tiempo.',
-      '- **Cobro**: reducir DSO (convenios con aseguradoras o anticipos).',
-      '- **Gasto**: revisar costes fijos >3 % de ingresos y renegociar insumos.',
-    ].join('\n');
-
-    const supuestos = [
-      `- CAPEX: ${eur(S.capex)} · Horizonte: ${S.meses} meses`,
-      `- DSO aseguradoras: ${S.dsoOn ? `${S.dsoDias} días` : 'No aplicado'}`,
-      `- Impuesto sociedades: ${S.impOn ? `${S.impPct} %` : 'No aplicado'}`,
-      `- Financiación CAPEX: Importe ${eur(S.finImporte)} · Interés ${S.finInteres} % · Plazo ${S.finPlazo} m · Carencia ${S.finCarencia} m`,
-      `- Escenario: ${S.escenario}`,
-      `> Nota: **Break-even de caja** (primer mes con flujo acumulado ≥ 0). No recalcular métricas.`,
-    ].join('\n');
-
-    const tablaY1 = tablaMeses(d, 12);
-    const csv = anexoCSV(d);
-    const analisis = (d.analisisTexto || '').replace(/<[^>]*>/g, '').trim();
-
-    return `# OptimClinic – Informe Financiero para Gamma
-Cliente: ${S.empresa}
-Responsable: ${S.responsable}
-Fecha: ${new Date().toLocaleDateString('es-ES')}
-
-## 0) Guía de maquetación (no mostrar)
-- Formato: 16:9, estilo consultoría.
-- Portada minimal + índice + bloques con 1 idea principal/slide.
-- Tablas legibles (es-ES, símbolo €).
-- **Usar cifras tal cual**; no recalcular.
-
----
-
-## 1) Portada
-Título: "${S.escenario} – Informe financiero"
-Subtítulo: ${S.empresa} · ${S.responsable}
-
-## 2) Resumen ejecutivo
-${analisis || 'Resumen en 4–6 bullets con hallazgos clave, crecimiento, rentabilidad y liquidez.'}
-
-## 3) Supuestos del escenario
-${supuestos}
-
-## 4) KPIs principales
-${kpis}
-
-## 5) Evolución financiera (gráfico)
-${imgPL || '(Inserta línea: Ingresos, Costes, EBITDA por mes)'}
-Notas: señalar mes de BE en el gráfico.
-
-## 6) Flujo de caja y acumulado (gráfico)
-${imgCash || '(Inserta área/columnas: Flujo neto y línea de flujo acumulado)'}
-Resaltar la **necesidad máxima de caja** y el mes de BE.
-
-## 7) Año 1 – Detalle mensual (tabla)
-\`\`\`
-${tablaY1}
-\`\`\`
-Total Año 1: Ingresos ${eur(ingreso12)}, EBITDA ${eur(ebitda12)}, Flujo ${eur(flujo12)}.
-
-## 8) Financiación y calendario de deuda
-- Carencia: ${S.finCarencia} meses · Tipo: ${S.finInteres} % · Plazo: ${S.finPlazo} meses.
-- Señalar salto de outflows al finalizar carencia y su impacto en caja.
-
-## 9) Sensibilidades (narrativa)
-- Ventas ±10 %: impacto directo en BE y necesidad de caja.
-- DSO +15 días: desplaza BE y puede exigir circulante adicional.
-- Coste variable +2 pp: erosiona margen y eleva payback.
-*(Gamma: describir efectos cualitativos usando los KPIs facilitados, sin recalcular.)*
-
-## 10) Riesgos y mitigaciones
-${riesgos}
-
-## 11) Palancas de mejora
-${palancas}
-
-## 12) Recomendaciones accionables (próximos 90 días)
-- Checklist operativo y financiero (cobro, pricing, costes, marketing).
-
-## 13) Conclusión
-Mensaje síntesis: viabilidad, ventanas de riesgo y foco ejecutivo.
-
-## 14) Anexo – Tabla completa (CSV)
-\`\`\`csv
-${csv}
-\`\`\`
-
-## 15) Glosario y metodología
-- BE de **caja**: primer mes con flujo acumulado ≥ 0.
-- VAN/TIR calculados en herramienta (no recalcular aquí).
-- DSO/Impuestos/Deuda según supuestos declarados arriba.
-
-`;
-  }
-
-  // --- UI handlers ---
-  $('btnDossierFin')?.addEventListener('click', function () {
-    if (!window.lastData) { alert('Pulsa "📊 Generar Análisis Completo" primero.'); return; }
-    const prompt = buildGammaPrompt(window.lastData);
-    $('taPrompt').value = prompt;
-    $('modalPrompt').style.display = 'block';
-  });
-
-  $('btnCopy')?.addEventListener('click', () => navigator.clipboard.writeText($('taPrompt').value));
-  $('btnClose')?.addEventListener('click', () => { $('modalPrompt').style.display = 'none'; });
-  $('btnDownload')?.addEventListener('click', () => {
-    const blob = new Blob([$('taPrompt').value], { type: 'text/markdown' });
+  function downloadPrompt() {
+    const ta = $('taPrompt'); if (!ta) return;
+    const blob = new Blob([ta.value], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'gamma_prompt_completo.md';
-    a.click();
-  });
+    a.download = `OptimClinic_Prompt_Gamma_${new Date().toISOString().slice(0,10)}.md`;
+    a.href = url; a.click();
+    URL.revokeObjectURL(url);
+  }
 
-  // export opcional
-  window.buildGammaPrompt = buildGammaPrompt;
+  // --- Init: cablea #btnDossierFin y botones del modal ---
+  function init() {
+    const btn = $('btnDossierFin');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        if (!window.lastData) { alert('Primero pulsa "📊 Generar Análisis Completo" en Planificación Financiera.'); return; }
+        const payload = serializeForGamma();
+        const prompt = buildGammaPrompt(payload);
+        openModal(prompt);
+      });
+    }
+    $('btnClose')?.addEventListener('click', closeModal);
+    $('btnCopy')?.addEventListener('click', copyPrompt);
+    $('btnDownload')?.addEventListener('click', downloadPrompt);
+
+    // Cerrar al hacer click fuera del card
+    document.addEventListener('click', (e) => {
+      const modal = $('modalPrompt');
+      if (!modal || modal.style.display !== 'block') return;
+      const card = modal.querySelector('div[style*="max-width"]');
+      if (card && !card.contains(e.target) && !e.target.closest('#btnDossierFin')) {
+        closeModal();
+      }
+    }, true);
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+  window.GammaPrompt = { buildGammaPrompt, serializeForGamma };
 })();
