@@ -2552,78 +2552,71 @@ document.getElementById('btnPDFDetalle')?.addEventListener('click', async (e) =>
   }
 });
 
-/* ====== Formateadores consistentes ====== */
+
+/* ====== Formateadores consistentes (manual, con punto de miles) ====== */
+function toInt(n){ return Math.round(Number(n)||0); }
 function intFmt(n){
-  return new Intl.NumberFormat('es-ES', {
-    useGrouping: true,
-    maximumFractionDigits: 0
-  }).format(Math.round(n || 0));
+  const v = toInt(n).toString();
+  return v.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
 function eurFmt(n){
-  return new Intl.NumberFormat('es-ES', {
-    style: 'currency',
-    currency: 'EUR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(Number(n || 0)).replace(/\u00A0/g, ' ');
+  const v = toInt(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return v + ' €';
 }
 function pctFmt(n){
-  if (!isFinite(n)) return '—';
-  return new Intl.NumberFormat('es-ES', {
-    maximumFractionDigits: 1
-  }).format(n) + '%';
+  const x = Number(n);
+  if (!isFinite(x)) return '—';
+  return (Math.round(x*10)/10).toString().replace('.', ',') + '%';
 }
 function sum(arr){ return (arr||[]).reduce((a,b)=>a+(Number(b)||0),0); }
 
 /* ====== Utilidades logo ====== */
 async function imgToDataURL(url){
-  try {
+  try{
     const res = await fetch(url, { mode: 'cors' });
     if (!res.ok) return null;
     const blob = await res.blob();
     return await new Promise(r=>{
-      const f = new FileReader();
-      f.onload = ()=>r(f.result);
-      f.readAsDataURL(blob);
+      const fr = new FileReader();
+      fr.onload = ()=>r(fr.result);
+      fr.readAsDataURL(blob);
     });
-  } catch {
-    return null;
-  }
+  }catch{ return null; }
 }
 
 /* ====== Generación del PDF ====== */
-async function exportFinancialPDFjsPDF() {
+async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
 
-  // ===== Datos fuente =====
-  if (!window.lastData) { alert('Genere el análisis primero'); return; }
+  if (!window.lastData){ alert('Genere el análisis primero'); return; }
   const d = window.lastData;
 
-  // ===== Cabecera =====
+  /* --- Cabecera / Portada --- */
   const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
-const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
+  const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
 
   // Título
-  doc.setFont('helvetica','bold'); doc.setFontSize(26);
-  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+10, { align:'center' });
+  doc.setFont('helvetica','bold'); 
+  doc.setFontSize(28);
+  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+14, { align:'center' });
 
-  // Logo (opcional)
-try {
-  const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
-  const logoData = await imgToDataURL(logoSrc);
-  if (logoData) doc.addImage(logoData, 'JPEG', margin, margin-10, 66, 66);
-} catch {}
+  // Logo
+  try{
+    const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
+    const logoData = await imgToDataURL(logoSrc);
+    if (logoData) doc.addImage(logoData, 'JPEG', margin, margin-6, 66, 66);
+  }catch{}
 
-
-  // Empresa / Responsable
-  let y = margin+20;
-  doc.setFont('helvetica','normal'); doc.setFontSize(12);
-  doc.text('Empresa: ' + empresa, margin+78, y); y+=16;
-  doc.text('Responsable: ' + responsable, margin+78, y); y+=16;
+  // Empresa / Responsable, con más aire bajo el título
+  let y = margin + 40;
+  doc.setFont('helvetica','normal'); 
+  doc.setFontSize(13);
+  doc.text('Empresa: ' + empresa, margin+80, y); y += 18;
+  doc.text('Responsable: ' + responsable, margin+80, y); y += 18;
 
   // Supuestos
   const capex = document.getElementById('capex')?.value || 0;
@@ -2631,34 +2624,35 @@ try {
   const finInteres = document.getElementById('finInteres')?.value || 0;
   const finPlazo = document.getElementById('finPlazo')?.value || 0;
   const dsoTxt = document.getElementById('toggleDSO')?.checked ? (document.getElementById('dsoAseg')?.value + ' días') : 'No aplica';
-  const impTxt = document.getElementById('toggleImp')?.checked ? (Number(document.getElementById('impSoc')?.value || 0).toFixed(1) + '%') : '—';
+  const impTxt = document.getElementById('toggleImp')?.checked ? ((Number(document.getElementById('impSoc')?.value||0)).toFixed(1).replace('.',',') + '%') : '—';
 
   doc.setFont('helvetica','bold'); doc.setFontSize(14);
-  doc.text('Supuestos principales', margin, y); y+=18;
+  doc.text('Supuestos principales', margin, y); y += 18;
+
   doc.setFont('helvetica','normal'); doc.setFontSize(12);
   [
     'CAPEX: ' + eurFmt(capex) + ' · Horizonte: ' + d.mesesArr.length + ' meses',
-    'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres||0).toFixed(1) + '% · ' + finPlazo + 'm',
-    'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + (impTxt)
-  ].forEach(line => { doc.text(line, margin, y); y+=16; });
+    'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres||0).toFixed(1).replace('.',',') + '% · ' + finPlazo + 'm',
+    'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
+  ].forEach(line => { doc.text(line, margin, y); y += 16; });
 
   // KPIs
-  y += 6;
-  const kpi = [
+  y += 8;
+  const kpis = [
     ['Break-even', d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes-1] + ')') : 'No alcanzado'],
-    ['ROI Final', (isFinite(d.roiFinal)? (Number(d.roiFinal).toFixed(0) + '%') : '—')],
+    ['ROI Final', (isFinite(d.roiFinal) ? (Math.round(d.roiFinal) + '%') : '—')],
     ['VAN (NPV)', eurFmt(d.npvVal)],
-    ['TIR Anual', isFinite(d.irrAnual) ? (Number(d.irrAnual*100).toFixed(0) + '%') : '—'],
+    ['TIR Anual', isFinite(d.irrAnual) ? (Math.round(d.irrAnual*100) + '%') : '—'],
     ['Necesidad máx. caja', eurFmt(d.necesidadMaxCaja) + (d.mesMinCaja?(' ('+d.mesMinCaja+')'):'')]
   ];
-  const kpiW = (pageW - margin*2) / 5;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0;i<5;i++) doc.text(kpi[i][0], margin + i*kpiW, y);
-  doc.setFont('helvetica','normal'); doc.setFontSize(16); y+=20;
-  for (let i=0;i<5;i++) doc.text(String(kpi[i][1]), margin + i*kpiW, y);
-  y += 18;
+  const kpiW = (pageW - 2*margin) / 5;
 
-  // ===== Tabla mensual =====
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  for (let i=0;i<5;i++) doc.text(kpis[i][0], margin + i*kpiW, y);
+  doc.setFont('helvetica','normal'); doc.setFontSize(16); y += 20;
+  for (let i=0;i<5;i++) doc.text(String(kpis[i][1]), margin + i*kpiW, y);
+
+  /* --- Tabla mensual en PÁGINA NUEVA --- */
   doc.addPage('a4','landscape');
 
   const head = [[
@@ -2684,20 +2678,20 @@ try {
   ]));
 
   const totals = {
-    planif: d.pacientesPlanif.reduce((a,b)=>a+Number(b||0),0),
-    efect:  d.pacientesEfectivos.reduce((a,b)=>a+Number(b||0),0),
-    ingresos: d.ingresos.reduce((a,b)=>a+Number(b||0),0),
-    ingColab: (d.ingresosColab||[]).reduce((a,b)=>a+Number(b||0),0),
-    cvar: d.cVariables.reduce((a,b)=>a+Number(b||0),0),
-    cfijos: d.cfMensual.reduce((a,b)=>a+Number(b||0),0),
-    ebitda: d.ebitda.reduce((a,b)=>a+Number(b||0),0),
-    amort:  d.amortArr.reduce((a,b)=>a+Number(b||0),0),
-    ebit:   d.ebit.reduce((a,b)=>a+Number(b||0),0),
-    intereses: d.intereses.reduce((a,b)=>a+Number(b||0),0),
-    impuestos: d.impuestos.reduce((a,b)=>a+Number(b||0),0),
-    principal: d.principal.reduce((a,b)=>a+Number(b||0),0),
-    flujo:  d.flujoNeto.reduce((a,b)=>a+Number(b||0),0),
-    acum:   (d.flujoAcum && d.flujoAcum.length ? d.flujoAcum[d.flujoAcum.length-1] : 0)
+    planif: sum(d.pacientesPlanif),
+    efect:  sum(d.pacientesEfectivos),
+    ingresos: sum(d.ingresos),
+    ingColab: sum(d.ingresosColab||[]),
+    cvar: sum(d.cVariables),
+    cfijos: sum(d.cfMensual),
+    ebitda: sum(d.ebitda),
+    amort:  sum(d.amortArr),
+    ebit:   sum(d.ebit),
+    intereses: sum(d.intereses),
+    impuestos: sum(d.impuestos),
+    principal: sum(d.principal),
+    flujo:  sum(d.flujoNeto),
+    acum:   (d.flujoAcum?.length ? d.flujoAcum[d.flujoAcum.length-1] : 0)
   };
 
   const foot = [[
@@ -2718,55 +2712,36 @@ try {
     eurFmt(totals.acum)
   ]];
 
-  // columnas: fijamos anchos para evitar cortes en “Ing. Colab”
-  const colWidths = {
-    0: 68,   // Mes
-    1: 50,   // Planif.
-    2: 62,   // Efectivos
-    3: 80,   // Ingresos
-    4: 80,   // Ing. Colab
-    5: 70,   // C.Var
-    6: 80,   // C.Fijos
-    7: 78,   // EBITDA
-    8: 70,   // Amort.
-    9: 70,   // EBIT
-    10: 78,  // Intereses
-    11: 78,  // Impuestos
-    12: 78,  // Principal
-    13: 78,  // Flujo
-    14: 78   // Acum.
-  };
   const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
 
   doc.autoTable({
-    head,
-    body,
-    foot,
+    head, body, foot,
     startY: margin,
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 10, cellPadding: 4, overflow: 'ellipsize' },
+    tableWidth: (pageW - 2*margin),               // ajustar a ancho útil
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 4, overflow: 'linebreak' },
     headStyles: { fillColor: [37,99,235], textColor: 255, fontStyle: 'bold' },
     footStyles: { fillColor: [241,245,249], textColor: [17,24,39], fontStyle: 'bold' },
-    columnStyles: Object.assign(
-      { 0: { halign: 'left',  cellWidth: colWidths[0] } },
-      ...rightCols.map(c => ({ [c]: { halign: 'right', cellWidth: colWidths[c] } }))
-    ),
+    columnStyles: Object.fromEntries([
+      [0, { halign: 'left' }],
+      ...rightCols.map(c => [c, { halign: 'right' }])
+    ]),
     didParseCell: (data) => {
       const col = data.column.index;
 
-      // Columna 0 del pie: centrada
+      // Centrar la celda "Totales"
       if (data.section === 'foot' && col === 0) {
         data.cell.styles.halign = 'center';
       }
 
-      // Color en EBITDA / Flujo / Acum. si +/-
-      if (data.section === 'body' && (col === 7 || col === 13 || col === 14)) {
-        const refArr = (col===7 ? d.ebitda : (col===13 ? d.flujoNeto : d.flujoAcum));
-        const raw = Number(refArr[data.row.index]||0);
+      // Colorear EBITDA / Flujo / Acum.
+      if (data.section === 'body' && (col===7 || col===13 || col===14)) {
+        const ref = (col===7 ? d.ebitda : (col===13 ? d.flujoNeto : d.flujoAcum));
+        const raw = Number(ref[data.row.index]||0);
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
         if (raw > 0) data.cell.styles.textColor = [5,150,105];
       }
-      if (data.section === 'foot' && (col === 7 || col === 13 || col === 14)) {
+      if (data.section === 'foot' && (col===7 || col===13 || col===14)) {
         const raw = (col===7 ? totals.ebitda : (col===13 ? totals.flujo : totals.acum));
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
         if (raw > 0) data.cell.styles.textColor = [5,150,105];
@@ -2781,7 +2756,6 @@ try {
 
   doc.save('Informe_Financiero.pdf');
 }
-
 
 
 
