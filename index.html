@@ -2592,119 +2592,119 @@ async function imgToDataURL(url){
 }
 
 /* ====== Generación del PDF ====== */
-async function exportFinancialPDFjsPDF(){
+async function exportFinancialPDFjsPDF() {
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit:'pt', format:'a4', orientation:'landscape' });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 40;
 
-  // Datos base desde la UI (fallbacks)
-  const empresa = (document.getElementById('empresa')?.value || 'Clínica Ejemplo').trim();
-  const responsable = (document.getElementById('responsable')?.value || 'Responsable').trim();
-  const fecha = new Date().toLocaleDateString('es-ES');
+  const nfEUR = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+  const nfINT = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 });
+  const eurFmt = v => nfEUR.format(Math.round(Number(v || 0)));
+  const intFmt = v => nfINT.format(Math.round(Number(v || 0)));
 
-  // Logo (tomamos el de la cabecera si existe, si no, fallback Imgur)
-  const fallbackLogoURL = 'https://i.imgur.com/eRKd3Hp.jpg';
-  const logoEl = document.querySelector('.logo img');
-  const logoSrc = logoEl?.src || fallbackLogoURL;
-  try {
-    const dataUrl = await imgToDataURL(logoSrc);
-    if (dataUrl) doc.addImage(dataUrl, 'JPEG', margin, margin-6, 64, 64);
-  } catch {}
+  const empresa = document.getElementById('empresa')?.value || '—';
+  const responsable = document.getElementById('responsable')?.value || '—';
+  const d = window.lastData;
 
-  // Título
-  let y = margin;
-  doc.setFont('helvetica','bold'); 
-  doc.setFontSize(22);
-  doc.text('Informe Financiero – Escenario Base', pageW/2, y, { align:'center' }); 
-  y += 26;
+  const addLogo = async () => {
+    const url = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      await new Promise(r => {
+        const fr = new FileReader();
+        fr.onload = () => { try { doc.addImage(fr.result, 'JPEG', margin, margin - 6, 64, 64); } catch {} r(); };
+        fr.readAsDataURL(blob);
+      });
+    } catch {}
+  };
 
-  // Cabecera empresa
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  doc.text('Empresa: ' + empresa, margin+74, y); y += 14;
-  doc.text('Responsable: ' + responsable, margin+74, y); y += 14;
-  doc.text('Fecha: ' + fecha, margin+74, y); y += 18;
+  await addLogo();
 
-  // Supuestos
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.text('Informe Financiero – Escenario Base', pageW / 2, margin + 10, { align: 'center' });
+
+  let y = margin + 56;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(12);
+  doc.text('Empresa: ' + empresa, margin + 74, margin + 8);
+  doc.text('Responsable: ' + responsable, margin + 74, margin + 26);
+
   const capex = document.getElementById('capex')?.value || 0;
   const finImporte = document.getElementById('finImporte')?.value || 0;
   const finInteres = document.getElementById('finInteres')?.value || 0;
   const finPlazo = document.getElementById('finPlazo')?.value || 0;
-  const dsoTxt = document.getElementById('toggleDSO')?.checked 
-                 ? ((document.getElementById('dsoAseg')?.value || 0) + ' días') 
-                 : 'No aplica';
-  const impTxt = document.getElementById('toggleImp')?.checked 
-                 ? ((Number(document.getElementById('impSoc')?.value || 0).toFixed(1)) + '%') 
-                 : '—';
+  const dsoTxt = document.getElementById('toggleDSO')?.checked ? (document.getElementById('dsoAseg')?.value + ' días') : 'No aplica';
+  const impTxt = document.getElementById('toggleImp')?.checked ? (Number(document.getElementById('impSoc')?.value || 0).toFixed(1) + '%') : '—';
 
-  doc.setFont('helvetica','bold'); doc.setFontSize(12);
-  doc.text('Supuestos principales', margin, y); 
-  y += 14;
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('Supuestos principales', margin, y); y += 16;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(12);
   [
-    'CAPEX: ' + eurFmt(capex) + ' · Horizonte: ' + (window.lastData?.mesesArr?.length || 0) + ' meses',
-    'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres||0).toFixed(1) + '% · ' + finPlazo + 'm',
+    'CAPEX: ' + eurFmt(capex) + ' · Horizonte: ' + d.mesesArr.length + ' meses',
+    'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres).toFixed(1) + '% · ' + finPlazo + 'm',
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
-  ].forEach(L => { doc.text(L, margin, y); y += 14; });
-  y += 6;
+  ].forEach(line => { doc.text(line, margin, y); y += 16; });
 
-  // KPIs
-  const d = window.lastData || {};
-  const kpiData = [
-    ['Break-even', d.beMes ? ('Mes ' + d.beMes + ' (' + (d.monthLabels?.[d.beMes-1] || '') + ')') : 'No alcanzado'],
-    ['ROI Final', pctFmt(d.roiFinal)],
+  y += 10;
+
+  const kpi = [
+    ['Break-even', d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes - 1] + ')') : 'No alcanzado'],
+    ['ROI Final', isFinite(d.roiFinal) ? (Math.round(d.roiFinal) + '%') : '—'],
     ['VAN (NPV)', eurFmt(d.npvVal)],
-    ['TIR Anual', (isFinite(d.irrAnual) ? pctFmt(d.irrAnual*100) : '—')],
-    ['Necesidad máx. caja', eurFmt(d.necesidadMaxCaja) + (d.mesMinCaja ? (' ('+d.mesMinCaja+')') : '')]
+    ['TIR Anual', isFinite(d.irrAnual) ? (Math.round(d.irrAnual * 100) + '%') : '—'],
+    ['Necesidad máx. caja', eurFmt(d.necesidadMaxCaja) + (d.mesMinCaja ? (' (' + d.mesMinCaja + ')') : '')]
   ];
-  const kpiW = (pageW - margin*2) / 5;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0; i<kpiData.length; i++){ const x = margin + i*kpiW; doc.text(kpiData[i][0], x, y); }
-  doc.setFont('helvetica','normal'); doc.setFontSize(16); y += 18;
-  for (let i=0; i<kpiData.length; i++){ const x = margin + i*kpiW; doc.text(String(kpiData[i][1]), x, y); }
-  y += 30;
+  const colW = (pageW - margin * 2) / 5;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+  for (let i = 0; i < kpi.length; i++) doc.text(kpi[i][0], margin + i * colW, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(18); y += 20;
+  for (let i = 0; i < kpi.length; i++) doc.text(String(kpi[i][1]), margin + i * colW, y);
+  y += 18;
 
-  // IMPORTANTE: SIN RESUMEN. La tabla empieza aquí mismo.
-  const startYTable = y;
-
-  // Tabla
   const head = [[
     'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos','EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
   ]];
 
-  const body = (d.mesesArr || []).map((_, i) => ([
-    d.monthLabels?.[i] || '',
-    intFmt(d.pacientesPlanif?.[i] || 0),
-    intFmt(d.pacientesEfectivos?.[i] || 0),
-    eurFmt(d.ingresos?.[i] || 0),
-    eurFmt((d.ingresosColab?.[i]) || 0),
-    eurFmt(d.cVariables?.[i] || 0),
-    eurFmt(d.cfMensual?.[i] || 0),
-    eurFmt(d.ebitda?.[i] || 0),
-    eurFmt(d.amortArr?.[i] || 0),
-    eurFmt(d.ebit?.[i] || 0),
-    eurFmt(d.intereses?.[i] || 0),
-    eurFmt(d.impuestos?.[i] || 0),
-    eurFmt(d.principal?.[i] || 0),
-    eurFmt(d.flujoNeto?.[i] || 0),
-    eurFmt(d.flujoAcum?.[i] || 0)
+  const body = d.mesesArr.map((_, i) => ([
+    d.monthLabels[i],
+    intFmt(d.pacientesPlanif[i]),
+    intFmt(d.pacientesEfectivos[i]),
+    eurFmt(d.ingresos[i]),
+    eurFmt((d.ingresosColab?.[i] || 0)),
+    eurFmt(d.cVariables[i]),
+    eurFmt(d.cfMensual[i]),
+    eurFmt(d.ebitda[i]),
+    eurFmt(d.amortArr[i]),
+    eurFmt(d.ebit[i]),
+    eurFmt(d.intereses[i]),
+    eurFmt(d.impuestos[i]),
+    eurFmt(d.principal[i]),
+    eurFmt(d.flujoNeto[i]),
+    eurFmt(d.flujoAcum[i])
   ]));
 
   const totals = {
-    planif: sum(d.pacientesPlanif),
-    efect: sum(d.pacientesEfectivos),
-    ingresos: sum(d.ingresos),
-    ingColab: sum(d.ingresosColab || []),
-    cvar: sum(d.cVariables),
-    cfijos: sum(d.cfMensual),
-    ebitda: sum(d.ebitda),
-    amort: sum(d.amortArr),
-    ebit: sum(d.ebit),
-    intereses: sum(d.intereses),
-    impuestos: sum(d.impuestos),
-    principal: sum(d.principal),
-    flujo: sum(d.flujoNeto),
+    planif: d.pacientesPlanif.reduce((a,b)=>a+(+b||0),0),
+    efect: d.pacientesEfectivos.reduce((a,b)=>a+(+b||0),0),
+    ingresos: d.ingresos.reduce((a,b)=>a+(+b||0),0),
+    ingColab: (d.ingresosColab||[]).reduce((a,b)=>a+(+b||0),0),
+    cvar: d.cVariables.reduce((a,b)=>a+(+b||0),0),
+    cfijos: d.cfMensual.reduce((a,b)=>a+(+b||0),0),
+    ebitda: d.ebitda.reduce((a,b)=>a+(+b||0),0),
+    amort: d.amortArr.reduce((a,b)=>a+(+b||0),0),
+    ebit: d.ebit.reduce((a,b)=>a+(+b||0),0),
+    intereses: d.intereses.reduce((a,b)=>a+(+b||0),0),
+    impuestos: d.impuestos.reduce((a,b)=>a+(+b||0),0),
+    principal: d.principal.reduce((a,b)=>a+(+b||0),0),
+    flujo: d.flujoNeto.reduce((a,b)=>a+(+b||0),0),
     acum: (d.flujoAcum && d.flujoAcum.length ? d.flujoAcum[d.flujoAcum.length - 1] : 0)
   };
 
@@ -2732,16 +2732,14 @@ async function exportFinancialPDFjsPDF(){
     head,
     body,
     foot,
-    startY: startYTable,
+    startY: y + 10,
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 },
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 4 },
     headStyles: { fillColor: [37,99,235], textColor: 255 },
     footStyles: { fillColor: [241,245,249], textColor: [17,24,39], fontStyle: 'bold' },
-    columnStyles: Object.fromEntries(rightCols.map(c => [c, { halign: 'right' }])),
+    columnStyles: Object.assign({ 0: { halign: 'left' } }, Object.fromEntries(rightCols.map(c => [c, { halign: 'right' }]))),
     didParseCell: function(data) {
       const col = data.column.index;
-
-      // Body: colores +/- para EBITDA, Flujo, Acum.
       if (data.section === 'body') {
         if (col === 7 || col === 13 || col === 14) {
           const raw = [d.ebitda, d.flujoNeto, d.flujoAcum][[7,13,14].indexOf(col)][data.row.index];
@@ -2749,8 +2747,6 @@ async function exportFinancialPDFjsPDF(){
           if (raw > 0) data.cell.styles.textColor = [5,150,105];
         }
       }
-
-      // Foot: centrar "Totales" en la primera columna y colores +/- en sumas clave
       if (data.section === 'foot') {
         if (col === 0) data.cell.styles.halign = 'center';
         if (col === 7 || col === 13 || col === 14) {
@@ -2769,6 +2765,7 @@ async function exportFinancialPDFjsPDF(){
 
   doc.save('Informe_Financiero.pdf');
 }
+
 
 
 function addFooter(doc){
