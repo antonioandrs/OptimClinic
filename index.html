@@ -543,7 +543,7 @@
 
   <div id="tablaDetalle"></div>
 
-  <button id="btnPDFDetalle" class="btn btn-secondary" style="margin-top: .75rem;">📄 Descargar PDF</button>
+  <button id="btnPDFDetalle" class="btn btn-secondary" style="margin-top: .75rem;">📄 Descargar PDF (completo)</button>
 </div>
 
 
@@ -2533,20 +2533,156 @@ function exportMasterReportPDF(){
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
 
-document.getElementById('btnPDFDetalle')?.addEventListener('click', () => {
-  const element = document.getElementById('detalleCompleto');
-  if (!element) { alert('No encuentro #detalleCompleto'); return; }
+document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDF);
+
+function exportFinancialPDF(){
+  if(!lastData){ alert('Genera primero el análisis financiero.'); return; }
+  const d = lastData;
+
+  // helpers
+  const safePct = (x)=> isFinite(x) ? (x.toFixed ? x.toFixed(1) : x) + '%' : '—';
+  const beTxt   = d.beMes ? `Mes ${d.beMes} (${d.monthLabels[d.beMes-1]})` : 'No alcanzado';
+  const irrTxt  = isFinite(d.irrAnual) ? (d.irrAnual*100).toFixed(1)+'%' : '—';
+  const roiTxt  = isFinite(d.roiFinal) ? d.roiFinal.toFixed(1)+'%' : '—';
+  const npvTxt  = eur(d.npvVal);
+  const cajaTxt = eur(d.necesidadMaxCaja) + (d.mesMinCaja ? ` (${d.mesMinCaja})` : '');
+
+  // supuestos
+  const capex        = num('capex');
+  const mesesH       = d.mesesArr.length;
+  const finImporte   = num('finImporte');
+  const finInteres   = num('finInteres');
+  const finPlazo     = num('finPlazo');
+  const finCarencia  = num('finCarencia');
+  const dsoDias      = document.getElementById('toggleDSO').checked ? num('dsoAseg') : 0;
+  const impSocTxt    = document.getElementById('toggleImp').checked ? (num('impSoc').toFixed(1)+'%') : '—';
+
+  // gráficos (si están renderizados)
+  const imgPnl  = (charts.pnl  && charts.pnl.toBase64Image)  ? charts.pnl.toBase64Image()  : '';
+  const imgCash = (charts.cash && charts.cash.toBase64Image) ? charts.cash.toBase64Image() : '';
+
+  // tabla completa (todos los meses)
+  const head = `
+    <thead style="background:#f1f5f9;">
+      <tr>
+        <th style="padding:6px 8px; border:1px solid #e5e7eb; text-align:left;">Mes</th>
+        <th style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">Efectivos</th>
+        <th style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">Ingresos</th>
+        <th style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">EBITDA</th>
+        <th style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">Flujo</th>
+        <th style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">Acum.</th>
+      </tr>
+    </thead>`;
+
+  let rows = '<tbody>';
+  for(let i=0;i<mesesH;i++){
+    const ebitdaOk = d.ebitda[i]    >= 0 ? '#059669' : '#dc2626';
+    const flujoOk  = d.flujoAcum[i] >= 0 ? '#059669' : '#dc2626';
+    rows += `
+      <tr>
+        <td style="padding:6px 8px; border:1px solid #e5e7eb;">${d.monthLabels[i]}</td>
+        <td style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">${d.pacientesEfectivos[i].toLocaleString('es-ES')}</td>
+        <td style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">${eur(d.ingresos[i])}</td>
+        <td style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right; color:${ebitdaOk}">${eur(d.ebitda[i])}</td>
+        <td style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right;">${eur(d.flujoNeto[i])}</td>
+        <td style="padding:6px 8px; border:1px solid #e5e7eb; text-align:right; color:${flujoOk}; font-weight:600;">${eur(d.flujoAcum[i])}</td>
+      </tr>`;
+    // Romper página cada ~36 filas para A4
+    if ((i+1) % 36 === 0 && i < mesesH-1) {
+      rows += `</tbody></table><div class="page-break"></div>
+               <table style="width:100%; border-collapse:collapse; font-size:11px;">${head}<tbody>`;
+    }
+  }
+  rows += '</tbody>';
+
+  // HTML del PDF
+  const html = `
+    <div style="font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <h2 style="margin:0;">Informe Financiero – Escenario Base</h2>
+        <div style="font-size:12px; color:#64748b;">${new Date().toLocaleDateString('es-ES')}</div>
+      </div>
+
+      <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px; padding:12px; margin-bottom:12px;">
+        <div style="font-weight:700; margin-bottom:6px;">Supuestos principales:</div>
+        <div>CAPEX: <strong>${eur(capex)}</strong> · Horizonte: <strong>${mesesH}</strong> meses</div>
+        <div>Financiación: ${finImporte>0 ? `${eur(finImporte)} · ${finInteres.toFixed(1)}% · ${finPlazo}m${finCarencia?` · ${finCarencia}m carencia`:''}` : 'Sin financiación'}</div>
+        <div>DSO aseguradoras: ${dsoDias ? dsoDias+' días' : 'No aplica'} · Impuesto sociedades: ${impSocTxt}</div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:12px;">
+        <div style="background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:12px; color:#64748b;">Break-even</div>
+          <div style="font-size:18px; font-weight:800;">${beTxt}</div>
+        </div>
+        <div style="background:#ecfeff; border:1px solid #a5f3fc; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:12px; color:#64748b;">ROI Final</div>
+          <div style="font-size:18px; font-weight:800; color:#059669;">${roiTxt}</div>
+        </div>
+        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:12px; color:#64748b;">VAN (NPV)</div>
+          <div style="font-size:18px; font-weight:800;">${npvTxt}</div>
+        </div>
+        <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:12px; color:#92400e;">TIR Anual</div>
+          <div style="font-size:18px; font-weight:800;">${irrTxt}</div>
+        </div>
+        <div style="background:#fee2e2; border:1px solid #fecaca; border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:12px; color:#7f1d1d;">Necesidad máx. caja</div>
+          <div style="font-size:18px; font-weight:800;">${cajaTxt}</div>
+        </div>
+      </div>
+
+      ${imgPnl || imgCash ? `
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:12px 0;">
+        ${imgPnl  ? `<div><div style="font-size:12px; margin-bottom:6px;">P&L Operativo</div><img src="${imgPnl}" style="width:100%; height:auto;"/></div>` : ''}
+        ${imgCash ? `<div><div style="font-size:12px; margin-bottom:6px;">Flujo de Caja</div><img src="${imgCash}" style="width:100%; height:auto;"/></div>` : ''}
+      </div>` : ''}
+
+      <div class="page-break"></div>
+
+      <h3 style="margin:0 0 8px;">Detalle Mensual (todos los meses)</h3>
+      <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        ${head}
+        ${rows}
+      </table>
+    </div>
+  `;
+
+  // contenedor temporal (no usar display:none; html2pdf no renderiza)
+  const wrap = document.createElement('div');
+  wrap.id = '__pdf_financial';
+  wrap.style.position = 'fixed';
+  wrap.style.left = '-9999px';
+  wrap.style.top = '0';
+  wrap.style.width = '794px'; // ~A4 a 96dpi
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+
+  // estilos de page break para html2pdf
+  const style = document.createElement('style');
+  style.textContent = `
+    .page-break { page-break-before: always; }
+    @page { margin: 12mm; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  `;
+  wrap.appendChild(style);
+
+  // PDF
   html2pdf()
     .set({
       margin: 10,
-      filename: 'Detalle_Mensual.pdf',
+      filename: 'Informe_Financiero_OptiClinic.pdf',
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css','legacy'], avoid: ['tr','img'] }
     })
-    .from(element)
-    .save();
-});
+    .from(wrap)
+    .save()
+    .then(()=> wrap.remove())
+    .catch(e=>{ wrap.remove(); alert('Error generando PDF: '+e.message); });
+}
 
     /* ===================== INICIALIZACIÓN ===================== */
     (function initStartMonth(){
