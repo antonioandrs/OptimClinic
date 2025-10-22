@@ -2535,6 +2535,24 @@ function exportMasterReportPDF(){
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
 
+  document.getElementById('btnPDFDetalle')?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Generando PDF...';
+    try {
+      await exportFinancialPDFjsPDF();
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo generar el PDF: ' + (err?.message || err));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original || '📄 Descargar PDF';
+    }
+  });
+
+
 
 async function exportFinancialPDFjsPDF() {
   if (!window.jspdf || !lastData) { alert('Genera primero el análisis'); return; }
