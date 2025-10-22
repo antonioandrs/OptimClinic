@@ -2533,9 +2533,9 @@ function exportMasterReportPDF(){
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
 
-document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDFPrint);
+document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDFHtml2Pdf);
 
-function exportFinancialPDFPrint(){
+function exportFinancialPDFHtml2Pdf(){
   if(!lastData){ alert('Genera primero el análisis financiero.'); return; }
   const d = lastData;
 
@@ -2555,114 +2555,115 @@ function exportFinancialPDFPrint(){
   const impSocTxt    = document.getElementById('toggleImp').checked ? (num('impSoc').toFixed(1)+'%') : '—';
   const logoSrc      = document.querySelector('.logo img')?.src || '';
 
-  const imgPnl  = (charts.pnl  && charts.pnl.toBase64Image)  ? charts.pnl.toBase64Image()  : '';
-  const imgCash = (charts.cash && charts.cash.toBase64Image) ? charts.cash.toBase64Image() : '';
-
-  const head = `
+  const th = `
     <thead>
       <tr>
-        <th>Mes</th>
-        <th style="text-align:right">Efectivos</th>
-        <th style="text-align:right">Ingresos</th>
-        <th style="text-align:right">EBITDA</th>
-        <th style="text-align:right">Flujo</th>
-        <th style="text-align:right">Acum.</th>
+        <th>Mes</th><th>Planif.</th><th>Efectivos</th><th>Ingresos</th><th>Ing. Colab</th>
+        <th>C.Var</th><th>C.Fijos</th><th>EBITDA</th><th>Amort.</th><th>EBIT</th>
+        <th>Intereses</th><th>Impuestos</th><th>Principal</th><th>Flujo</th><th>Acum.</th>
       </tr>
     </thead>`;
 
   let rows = '<tbody>';
   for(let i=0;i<mesesH;i++){
-    const ebitdaOk = d.ebitda[i]    >= 0 ? '#059669' : '#dc2626';
-    const flujoOk  = d.flujoAcum[i] >= 0 ? '#059669' : '#dc2626';
+    const okE = d.ebitda[i]>=0 ? '#059669' : '#dc2626';
+    const okA = d.flujoAcum[i]>=0 ? '#059669' : '#dc2626';
     rows += `
       <tr>
         <td>${d.monthLabels[i]}</td>
+        <td style="text-align:right">${(d.pacientesPlanif[i]||0).toLocaleString('es-ES')}</td>
         <td style="text-align:right">${d.pacientesEfectivos[i].toLocaleString('es-ES')}</td>
         <td style="text-align:right">${eur(d.ingresos[i])}</td>
-        <td style="text-align:right; color:${ebitdaOk}">${eur(d.ebitda[i])}</td>
+        <td style="text-align:right">${eur(d.ingresosColab?.[i]||0)}</td>
+        <td style="text-align:right">${eur(d.cVariables[i])}</td>
+        <td style="text-align:right">${eur(d.cfMensual[i])}</td>
+        <td style="text-align:right;color:${okE}">${eur(d.ebitda[i])}</td>
+        <td style="text-align:right">${eur(d.amortArr[i])}</td>
+        <td style="text-align:right">${eur(d.ebit[i])}</td>
+        <td style="text-align:right">${eur(d.intereses[i])}</td>
+        <td style="text-align:right">${eur(d.impuestos[i])}</td>
+        <td style="text-align:right">${eur(d.principal[i])}</td>
         <td style="text-align:right">${eur(d.flujoNeto[i])}</td>
-        <td style="text-align:right; color:${flujoOk}; font-weight:700">${eur(d.flujoAcum[i])}</td>
+        <td style="text-align:right;color:${okA};font-weight:700">${eur(d.flujoAcum[i])}</td>
       </tr>`;
-    if ((i+1)%36===0 && i<mesesH-1){
-      rows += `</tbody></table><div class="page-break"></div>
-               <table class="t">${head}<tbody>`;
-    }
   }
   rows += '</tbody>';
 
   const html = `
-  <div class="wrap">
-    <div class="cover">
-      ${logoSrc ? `<img src="${logoSrc}" class="logo">` : ``}
+  <div id="pdfWrap" style="font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; max-width:1200px; margin:0 auto;">
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:12px;">
+      ${logoSrc ? `<img src="${logoSrc}" style="width:72px;height:72px;border-radius:12px;object-fit:cover;background:#fff;">` : ``}
       <div>
-        <h1>Informe Financiero – Escenario Base</h1>
-        <div class="muted">${new Date().toLocaleDateString('es-ES')}</div>
+        <h1 style="margin:0; font-size:24px;">Informe Financiero – Escenario Base</h1>
+        <div style="color:#64748b; font-size:12px;">${new Date().toLocaleDateString('es-ES')}</div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">Supuestos principales</div>
+    <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px; margin:10px 0;">
+      <div style="font-weight:700; margin-bottom:6px;">Supuestos principales</div>
       <div>CAPEX: <strong>${eur(capex)}</strong> · Horizonte: <strong>${mesesH}</strong> meses</div>
       <div>Financiación: ${finImporte>0 ? `${eur(finImporte)} · ${finInteres.toFixed(1)}% · ${finPlazo}m${finCarencia?` · ${finCarencia}m carencia`:''}` : 'Sin financiación'}</div>
       <div>DSO aseguradoras: ${dsoDias ? dsoDias+' días' : 'No aplica'} · Impuesto sociedades: ${impSocTxt}</div>
     </div>
 
-    <div class="kpis">
-      <div class="kpi"><div class="kpi-h">Break-even</div><div class="kpi-v">${beTxt}</div></div>
-      <div class="kpi"><div class="kpi-h">ROI Final</div><div class="kpi-v green">${roiTxt}</div></div>
-      <div class="kpi"><div class="kpi-h">VAN (NPV)</div><div class="kpi-v">${npvTxt}</div></div>
-      <div class="kpi"><div class="kpi-h">TIR Anual</div><div class="kpi-v">${irrTxt}</div></div>
-      <div class="kpi"><div class="kpi-h">Necesidad máx. caja</div><div class="kpi-v red">${cajaTxt}</div></div>
+    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:10px 0;">
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:12px;color:#64748b">Break-even</div><div style="font-size:18px;font-weight:800">${beTxt}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:12px;color:#64748b">ROI Final</div><div style="font-size:18px;font-weight:800;color:#059669">${roiTxt}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:12px;color:#64748b">VAN (NPV)</div><div style="font-size:18px;font-weight:800">${npvTxt}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:12px;color:#64748b">TIR Anual</div><div style="font-size:18px;font-weight:800">${irrTxt}</div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
+        <div style="font-size:12px;color:#64748b">Necesidad máx. caja</div><div style="font-size:18px;font-weight:800;color:#dc2626">${cajaTxt}</div>
+      </div>
     </div>
-
-    ${(imgPnl||imgCash) ? `
-    <div class="grid2">
-      ${imgPnl ? `<div><div class="cap">P&L Operativo</div><img src="${imgPnl}" class="chart"></div>`:''}
-      ${imgCash? `<div><div class="cap">Flujo de Caja</div><img src="${imgCash}" class="chart"></div>`:''}
-    </div>`:''}
 
     <div class="page-break"></div>
 
-    <h2>Detalle mensual (todos los meses)</h2>
-    <table class="t">
-      ${head}
+    <h2 style="margin:12px 0 8px; font-size:18px;">Detalle mensual (todos los meses)</h2>
+    <table style="width:100%; border-collapse:collapse; font-size:11px;">
+      ${th}
       ${rows}
     </table>
   </div>`;
 
   const css = `
-  @page { size: A4; margin: 12mm; }
-  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; }
-  .wrap { max-width: 820px; margin:0 auto; }
-  .cover { display:flex; align-items:center; gap:16px; margin-bottom:12px; }
-  .logo { width:72px; height:72px; border-radius:12px; object-fit:cover; background:#fff; }
-  h1 { margin:0; font-size:24px; }
-  h2 { margin:12px 0 8px; font-size:18px; }
-  .muted { color:#64748b; font-size:12px; }
-  .card { background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px; margin:10px 0; }
-  .card-title { font-weight:700; margin-bottom:6px; }
-  .kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:10px 0; }
-  .kpi { background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px; text-align:center; }
-  .kpi-h { font-size:12px; color:#64748b; margin-bottom:4px; }
-  .kpi-v { font-size:18px; font-weight:800; }
-  .kpi-v.green { color:#059669; }
-  .kpi-v.red { color:#dc2626; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0; }
-  .cap { font-size:12px; margin-bottom:4px; color:#111827; }
-  .chart { width:100%; height:auto; border:1px solid #e5e7eb; border-radius:6px; }
-  table.t { width:100%; border-collapse:collapse; font-size:12px; }
-  table.t th, table.t td { border:1px solid #e5e7eb; padding:6px 8px; }
-  table.t thead { background:#f1f5f9; }
-  .page-break { page-break-before: always; }
+    @page { size: A4 landscape; margin: 10mm; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    table th, table td { border:1px solid #e5e7eb; padding:5px 6px; }
+    table thead { background:#f1f5f9; }
+    .page-break { page-break-before: always; }
   `;
 
-  const w = window.open('', '_blank');
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Informe Financiero</title><style>${css}</style></head><body>${html}</body></html>`);
-  w.document.close();
-  w.focus();
-  setTimeout(()=>{ w.print(); w.close(); }, 600);
+  const tmp = document.createElement('div');
+  tmp.id = 'pdfTmp';
+  tmp.style.position = 'fixed';
+  tmp.style.left = '-10000px';
+  tmp.style.top = '0';
+  tmp.innerHTML = `<style>${css}</style>${html}`;
+  document.body.appendChild(tmp);
+
+  html2pdf()
+    .set({
+      margin: 10,
+      filename: 'Informe_Financiero.pdf',
+      pagebreak: { mode: ['css', 'legacy'] },
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+    })
+    .from(tmp)
+    .save()
+    .then(()=> tmp.remove())
+    .catch(()=> tmp.remove());
 }
+
 
 
     /* ===================== INICIALIZACIÓN ===================== */
