@@ -2534,108 +2534,84 @@ function exportMasterReportPDF(){
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
 
-document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDFjsPDF);
-
 async function exportFinancialPDFjsPDF() {
   if (!window.jspdf || !lastData) { alert('Genera primero el análisis'); return; }
   const { jsPDF } = window.jspdf;
-
-  const SHOW_DATE = false;
-
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
-  let y = margin;
 
-  async function imgToDataURL(url) {
-    const res = await fetch(url, { mode: 'cors' });
-    const blob = await res.blob();
-    return await new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result);
-      r.readAsDataURL(blob);
-    });
-  }
-
-  const title = 'Informe Financiero – Escenario Base';
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.text(title, pageW / 2, y, { align: 'center' });
-
-  if (SHOW_DATE) {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    const fecha = new Date().toLocaleDateString('es-ES');
-    doc.text(fecha, pageW - margin, y, { align: 'right' });
-  }
-  y += 22;
-
-  const logoEl = document.querySelector('.logo img');
-  if (logoEl && logoEl.src) {
-    try {
-      const dataUrl = await imgToDataURL(logoEl.src);
-      doc.addImage(dataUrl, 'JPEG', margin, margin - 4, 48, 48);
-    } catch {}
-  }
+  function eurFmt(n){ const x=Math.round(Number(n||0)); return x.toLocaleString('es-ES')+' €'; }
+  function intFmt(n){ return Math.round(Number(n||0)).toLocaleString('es-ES'); }
+  function pctFmt(n){ return (isFinite(n)?n.toFixed(1):0)+'%'; }
+  function sum(a){ return (a||[]).reduce((x,y)=>x+Number(y||0),0); }
 
   const d = lastData;
-  function eurFmt(n) {
-    const x = Math.round(Number(n || 0));
-    return x.toLocaleString('es-ES') + ' €';
-  }
-  function intFmt(n) {
-    return Math.round(Number(n || 0)).toLocaleString('es-ES');
-  }
-  function pctFmt(n) {
-    return (isFinite(n) ? n.toFixed(1) : 0) + '%';
+  const fecha = new Date().toLocaleDateString('es-ES');
+  const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
+  const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
+
+  async function imgToDataURL(url){
+    const res = await fetch(url, { mode: 'cors' });
+    const blob = await res.blob();
+    return await new Promise(r=>{ const f=new FileReader(); f.onload=()=>r(f.result); f.readAsDataURL(blob); });
   }
 
+  let y = margin;
+  doc.setFont('helvetica','bold'); doc.setFontSize(22);
+  doc.text('Informe Financiero – Escenario Base', pageW/2, y, { align:'center' }); y+=26;
+  const logoEl = document.querySelector('.logo img');
+  if (logoEl && logoEl.src) {
+    try { const dataUrl = await imgToDataURL(logoEl.src); doc.addImage(dataUrl, 'JPEG', margin, margin-6, 64, 64); } catch(e){}
+  }
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  doc.text('Empresa: '+empresa, margin+74, y); y+=14;
+  doc.text('Responsable: '+responsable, margin+74, y); y+=14;
+  doc.text('Fecha: '+fecha, margin+74, y); y+=18;
+
   const capex = document.getElementById('capex')?.value || 0;
-  const meses = d.mesesArr.length;
   const finImporte = document.getElementById('finImporte')?.value || 0;
   const finInteres = document.getElementById('finInteres')?.value || 0;
   const finPlazo = document.getElementById('finPlazo')?.value || 0;
   const dsoTxt = document.getElementById('toggleDSO')?.checked ? (document.getElementById('dsoAseg')?.value + ' días') : 'No aplica';
   const impTxt = document.getElementById('toggleImp')?.checked ? (Number(document.getElementById('impSoc')?.value || 0).toFixed(1) + '%') : '—';
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
-  doc.text('Supuestos principales:', margin + 60, y);
-  y += 14;
-
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  const lines = [
-    `CAPEX: ${eurFmt(capex)} · Horizonte: ${meses} meses`,
-    `Financiación: ${eurFmt(finImporte)} · ${Number(finInteres).toFixed(1)}% · ${finPlazo}m`,
-    `DSO aseguradoras: ${dsoTxt} · Impuesto sociedades: ${impTxt}`
+  doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text('Supuestos principales', margin, y); y+=14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  const sup = [
+    'CAPEX: '+eurFmt(capex)+' · Horizonte: '+d.mesesArr.length+' meses',
+    'Financiación: '+eurFmt(finImporte)+' · '+Number(finInteres).toFixed(1)+'% · '+finPlazo+'m',
+    'DSO aseguradoras: '+dsoTxt+' · Impuesto sociedades: '+impTxt
   ];
-  lines.forEach(L => { doc.text(L, margin + 60, y); y += 14; });
+  sup.forEach(L=>{ doc.text(L, margin, y); y+=14; });
+  y+=6;
 
-  y += 6;
-
-  const kpiW = (pageW - margin*2) / 5;
   const kpiData = [
-    ['Break-even', d.beMes ? `Mes ${d.beMes}` : 'No alcanzado'],
+    ['Break-even', d.beMes ? ('Mes '+d.beMes+' ('+d.monthLabels[d.beMes-1]+')') : 'No alcanzado'],
     ['ROI Final', pctFmt(d.roiFinal)],
     ['VAN (NPV)', eurFmt(d.npvVal)],
     ['TIR Anual', isFinite(d.irrAnual) ? pctFmt(d.irrAnual*100) : '—'],
-    ['Necesidad máx. caja', `${eurFmt(d.necesidadMaxCaja)}${d.mesMinCaja ? ' ('+d.mesMinCaja+')' : ''}`]
+    ['Necesidad máx. caja', eurFmt(d.necesidadMaxCaja)+(d.mesMinCaja?(' ('+d.mesMinCaja+')'):'')]
   ];
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
-  for (let i=0;i<kpiData.length;i++){
-    const x = margin + i*kpiW;
-    doc.text(kpiData[i][0], x, y);
-  }
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(14);
-  y += 16;
-  for (let i=0;i<kpiData.length;i++){
-    const x = margin + i*kpiW;
-    doc.text(String(kpiData[i][1]), x, y);
-  }
-  y += 22;
+  const kpiW = (pageW - margin*2) / 5;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  for (let i=0;i<kpiData.length;i++){ const x=margin+i*kpiW; doc.text(kpiData[i][0], x, y); }
+  doc.setFont('helvetica','normal'); doc.setFontSize(16); y+=18;
+  for (let i=0;i<kpiData.length;i++){ const x=margin+i*kpiW; doc.text(String(kpiData[i][1]), x, y); }
+  y+=30;
+
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const resumen = (d.analisisTexto||'').replace(/<[^>]*>/g,'');
+  const split = doc.splitTextToSize(resumen || 'Genera el análisis para ver el resumen ejecutivo.', pageW - margin*2);
+  doc.text(split, margin, y);
+
+  doc.addPage('a4','landscape');
 
   const head = [[
-    'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos',
-    'EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
+    'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos','EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
   ]];
 
   const body = d.mesesArr.map((_, i) => ([
@@ -2656,15 +2632,52 @@ async function exportFinancialPDFjsPDF() {
     eurFmt(d.flujoAcum[i])
   ]));
 
+  const totals = {
+    planif: sum(d.pacientesPlanif),
+    efect: sum(d.pacientesEfectivos),
+    ingresos: sum(d.ingresos),
+    ingColab: sum(d.ingresosColab||[]),
+    cvar: sum(d.cVariables),
+    cfijos: sum(d.cfMensual),
+    ebitda: sum(d.ebitda),
+    amort: sum(d.amortArr),
+    ebit: sum(d.ebit),
+    intereses: sum(d.intereses),
+    impuestos: sum(d.impuestos),
+    principal: sum(d.principal),
+    flujo: sum(d.flujoNeto),
+    acum: (d.flujoAcum && d.flujoAcum.length ? d.flujoAcum[d.flujoAcum.length-1] : 0)
+  };
+
+  const foot = [[
+    'Totales',
+    intFmt(totals.planif),
+    intFmt(totals.efect),
+    eurFmt(totals.ingresos),
+    eurFmt(totals.ingColab),
+    eurFmt(totals.cvar),
+    eurFmt(totals.cfijos),
+    eurFmt(totals.ebitda),
+    eurFmt(totals.amort),
+    eurFmt(totals.ebit),
+    eurFmt(totals.intereses),
+    eurFmt(totals.impuestos),
+    eurFmt(totals.principal),
+    eurFmt(totals.flujo),
+    eurFmt(totals.acum)
+  ]];
+
   const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
 
   doc.autoTable({
     head,
     body,
-    startY: y,
+    foot,
+    startY: margin,
     theme: 'grid',
     styles: { font: 'helvetica', fontSize: 9, cellPadding: 3 },
     headStyles: { fillColor: [37,99,235], textColor: 255 },
+    footStyles: { fillColor: [241,245,249], textColor: [17,24,39], fontStyle: 'bold' },
     columnStyles: Object.fromEntries(rightCols.map(c => [c, { halign: 'right' }])),
     didParseCell: function(data) {
       const col = data.column.index;
@@ -2675,17 +2688,24 @@ async function exportFinancialPDFjsPDF() {
           if (raw > 0) data.cell.styles.textColor = [5,150,105];
         }
       }
+      if (data.section === 'foot') {
+        if (col === 7 || col === 13 || col === 14) {
+          const raw = [totals.ebitda, totals.flujo, totals.acum][[7,13,14].indexOf(col)];
+          if (raw < 0) data.cell.styles.textColor = [220,38,38];
+          if (raw > 0) data.cell.styles.textColor = [5,150,105];
+        }
+      }
     },
-    margin: { left: margin, right: margin },
-    didDrawPage: function (data) {
-      const str = 'Página ' + doc.internal.getNumberOfPages();
+    margin: { left: margin, right: margin, top: margin, bottom: margin },
+    didDrawPage: function () {
       doc.setFontSize(9);
-      doc.text(str, pageW - margin, doc.internal.pageSize.getHeight() - 12, { align: 'right' });
+      doc.text('Página '+doc.internal.getNumberOfPages(), pageW - margin, pageH - 12, { align: 'right' });
     }
   });
 
   doc.save('Informe_Financiero.pdf');
 }
+
 
 
 function addFooter(doc){
