@@ -164,6 +164,7 @@
             src="https://i.imgur.com/eRKd3Hp.jpeg"
             alt="Logo OptimClinic"
             loading="lazy"
+	    crossorigin="anonymous"
             referrerpolicy="no-referrer"
           />
         </div>
@@ -2534,6 +2535,7 @@ function exportMasterReportPDF(){
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
 
+
 async function exportFinancialPDFjsPDF() {
   if (!window.jspdf || !lastData) { alert('Genera primero el análisis'); return; }
   const { jsPDF } = window.jspdf;
@@ -2553,18 +2555,25 @@ async function exportFinancialPDFjsPDF() {
   const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
 
   async function imgToDataURL(url){
-    const res = await fetch(url, { mode: 'cors' });
-    const blob = await res.blob();
-    return await new Promise(r=>{ const f=new FileReader(); f.onload=()=>r(f.result); f.readAsDataURL(blob); });
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise(r=>{ const f=new FileReader(); f.onload=()=>r(f.result); f.readAsDataURL(blob); });
+    } catch { return null; }
   }
 
   let y = margin;
   doc.setFont('helvetica','bold'); doc.setFontSize(22);
   doc.text('Informe Financiero – Escenario Base', pageW/2, y, { align:'center' }); y+=26;
+
+  const fallbackLogoURL = "https://i.imgur.com/eRKd3Hp.jpg";
   const logoEl = document.querySelector('.logo img');
-  if (logoEl && logoEl.src) {
-    try { const dataUrl = await imgToDataURL(logoEl.src); doc.addImage(dataUrl, 'JPEG', margin, margin-6, 64, 64); } catch(e){}
-  }
+  const logoSrc = logoEl?.src || fallbackLogoURL;
+  try {
+    const dataUrl = await imgToDataURL(logoSrc);
+    if (dataUrl) doc.addImage(dataUrl, 'JPEG', margin, margin-6, 64, 64);
+  } catch {}
 
   doc.setFont('helvetica','normal'); doc.setFontSize(11);
   doc.text('Empresa: '+empresa, margin+74, y); y+=14;
@@ -2581,12 +2590,11 @@ async function exportFinancialPDFjsPDF() {
   doc.setFont('helvetica','bold'); doc.setFontSize(12);
   doc.text('Supuestos principales', margin, y); y+=14;
   doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  const sup = [
+  [
     'CAPEX: '+eurFmt(capex)+' · Horizonte: '+d.mesesArr.length+' meses',
     'Financiación: '+eurFmt(finImporte)+' · '+Number(finInteres).toFixed(1)+'% · '+finPlazo+'m',
     'DSO aseguradoras: '+dsoTxt+' · Impuesto sociedades: '+impTxt
-  ];
-  sup.forEach(L=>{ doc.text(L, margin, y); y+=14; });
+  ].forEach(L=>{ doc.text(L, margin, y); y+=14; });
   y+=6;
 
   const kpiData = [
@@ -2705,7 +2713,6 @@ async function exportFinancialPDFjsPDF() {
 
   doc.save('Informe_Financiero.pdf');
 }
-
 
 
 function addFooter(doc){
