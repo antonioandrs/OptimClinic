@@ -1011,8 +1011,9 @@ var season = (Array.isArray(cfg.seasonality) && cfg.seasonality.length===12) ? c
 // Para modo "objetivo anual": preparamos pesos estacionales (se normalizan después)
 var pesos = new Array(meses).fill(0);
 var demandaRaw = new Array(meses).fill(0);
+var startMonth = startDate.getMonth();
 for (var m = 0; m < meses; m++) {
-  var seasonFactor = season[m % 12] || 1;
+var seasonFactor = season[(startMonth + m) % 12] || 1;
   // Lift sencillo por marketing (altas = mktMes/cpa sobre la base inicial):
   var lift = (mktMes > 0 && cpa > 0 && srv0 > 0) ? (1 + (mktMes / cpa) / srv0) : 1;
 
