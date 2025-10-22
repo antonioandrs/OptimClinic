@@ -12,7 +12,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 
   <style>
     :root {
@@ -2533,11 +2534,17 @@ function exportMasterReportPDF(){
       XLSX.writeFile(wb, 'opticlinic_analisis.xlsx');
     });
 
-document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDFHtml2Pdf);
+<script>
+document.getElementById('btnPDFDetalle')?.addEventListener('click', exportFinancialPDFjsPDF);
 
-function exportFinancialPDFHtml2Pdf(){
+async function exportFinancialPDFjsPDF(){
   if(!lastData){ alert('Genera primero el análisis financiero.'); return; }
   const d = lastData;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const margin = 28;
 
   const beTxt   = d.beMes ? `Mes ${d.beMes} (${d.monthLabels[d.beMes-1]})` : 'No alcanzado';
   const irrTxt  = isFinite(d.irrAnual) ? (d.irrAnual*100).toFixed(1)+'%' : '—';
@@ -2555,114 +2562,137 @@ function exportFinancialPDFHtml2Pdf(){
   const impSocTxt    = document.getElementById('toggleImp').checked ? (num('impSoc').toFixed(1)+'%') : '—';
   const logoSrc      = document.querySelector('.logo img')?.src || '';
 
-  const th = `
-    <thead>
-      <tr>
-        <th>Mes</th><th>Planif.</th><th>Efectivos</th><th>Ingresos</th><th>Ing. Colab</th>
-        <th>C.Var</th><th>C.Fijos</th><th>EBITDA</th><th>Amort.</th><th>EBIT</th>
-        <th>Intereses</th><th>Impuestos</th><th>Principal</th><th>Flujo</th><th>Acum.</th>
-      </tr>
-    </thead>`;
+  // ====== Portada / resumen ======
+  // Logo (opcional)
+  await addImageIfPossible(doc, logoSrc, margin, margin, 64, 64);
 
-  let rows = '<tbody>';
-  for(let i=0;i<mesesH;i++){
-    const okE = d.ebitda[i]>=0 ? '#059669' : '#dc2626';
-    const okA = d.flujoAcum[i]>=0 ? '#059669' : '#dc2626';
-    rows += `
-      <tr>
-        <td>${d.monthLabels[i]}</td>
-        <td style="text-align:right">${(d.pacientesPlanif[i]||0).toLocaleString('es-ES')}</td>
-        <td style="text-align:right">${d.pacientesEfectivos[i].toLocaleString('es-ES')}</td>
-        <td style="text-align:right">${eur(d.ingresos[i])}</td>
-        <td style="text-align:right">${eur(d.ingresosColab?.[i]||0)}</td>
-        <td style="text-align:right">${eur(d.cVariables[i])}</td>
-        <td style="text-align:right">${eur(d.cfMensual[i])}</td>
-        <td style="text-align:right;color:${okE}">${eur(d.ebitda[i])}</td>
-        <td style="text-align:right">${eur(d.amortArr[i])}</td>
-        <td style="text-align:right">${eur(d.ebit[i])}</td>
-        <td style="text-align:right">${eur(d.intereses[i])}</td>
-        <td style="text-align:right">${eur(d.impuestos[i])}</td>
-        <td style="text-align:right">${eur(d.principal[i])}</td>
-        <td style="text-align:right">${eur(d.flujoNeto[i])}</td>
-        <td style="text-align:right;color:${okA};font-weight:700">${eur(d.flujoAcum[i])}</td>
-      </tr>`;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
+  doc.text('Informe Financiero – Escenario Base', margin + 80, margin + 20);
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(new Date().toLocaleDateString('es-ES'), margin + 80, margin + 36);
+  doc.setTextColor(0);
+
+  // Supuestos
+  const sup = [
+    `CAPEX: ${eur(capex)} · Horizonte: ${mesesH} meses`,
+    `Financiación: ${finImporte>0 ? `${eur(finImporte)} · ${finInteres.toFixed(1)}% · ${finPlazo}m${finCarencia?` · ${finCarencia}m carencia`:''}` : 'Sin financiación'}`,
+    `DSO aseguradoras: ${dsoDias ? dsoDias+' días' : 'No aplica'} · Impuesto sociedades: ${impSocTxt}`
+  ];
+  doc.setFontSize(11);
+  doc.text(sup, margin, margin + 100);
+
+  // KPIs
+  const kpiY = margin + 140;
+  const kpis = [
+    ['Break-even', beTxt],
+    ['ROI Final', roiTxt],
+    ['VAN (NPV)', npvTxt],
+    ['TIR Anual', irrTxt],
+    ['Necesidad máx. caja', cajaTxt],
+  ];
+  drawKPIs(doc, kpis, margin, kpiY, pageW - margin*2);
+
+  // Gráficos (si existen)
+  let yCharts = kpiY + 90;
+  const imgPnl  = (charts.pnl  && charts.pnl.toBase64Image)  ? charts.pnl.toBase64Image()  : '';
+  const imgCash = (charts.cash && charts.cash.toBase64Image) ? charts.cash.toBase64Image() : '';
+  const chartW = (pageW - margin*3) / 2, chartH = 180;
+
+  if (imgPnl || imgCash){
+    if (imgPnl) doc.addImage(imgPnl, 'PNG', margin, yCharts, chartW, chartH, undefined, 'FAST');
+    if (imgCash) doc.addImage(imgCash, 'PNG', margin*2 + chartW, yCharts, chartW, chartH, undefined, 'FAST');
+    yCharts += chartH + 10;
   }
-  rows += '</tbody>';
 
-  const html = `
-  <div id="pdfWrap" style="font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#111827; max-width:1200px; margin:0 auto;">
-    <div style="display:flex; align-items:center; gap:16px; margin-bottom:12px;">
-      ${logoSrc ? `<img src="${logoSrc}" style="width:72px;height:72px;border-radius:12px;object-fit:cover;background:#fff;">` : ``}
-      <div>
-        <h1 style="margin:0; font-size:24px;">Informe Financiero – Escenario Base</h1>
-        <div style="color:#64748b; font-size:12px;">${new Date().toLocaleDateString('es-ES')}</div>
-      </div>
-    </div>
+  // Pie de página con número (sin URL/fecha del navegador)
+  addFooter(doc);
+  doc.addPage('a4', 'landscape');
 
-    <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:10px; margin:10px 0;">
-      <div style="font-weight:700; margin-bottom:6px;">Supuestos principales</div>
-      <div>CAPEX: <strong>${eur(capex)}</strong> · Horizonte: <strong>${mesesH}</strong> meses</div>
-      <div>Financiación: ${finImporte>0 ? `${eur(finImporte)} · ${finInteres.toFixed(1)}% · ${finPlazo}m${finCarencia?` · ${finCarencia}m carencia`:''}` : 'Sin financiación'}</div>
-      <div>DSO aseguradoras: ${dsoDias ? dsoDias+' días' : 'No aplica'} · Impuesto sociedades: ${impSocTxt}</div>
-    </div>
+  // ====== Tabla completa (TODAS las columnas) ======
+  const head = [[
+    'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos','EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
+  ]];
 
-    <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:10px 0;">
-      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:12px;color:#64748b">Break-even</div><div style="font-size:18px;font-weight:800">${beTxt}</div>
-      </div>
-      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:12px;color:#64748b">ROI Final</div><div style="font-size:18px;font-weight:800;color:#059669">${roiTxt}</div>
-      </div>
-      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:12px;color:#64748b">VAN (NPV)</div><div style="font-size:18px;font-weight:800">${npvTxt}</div>
-      </div>
-      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:12px;color:#64748b">TIR Anual</div><div style="font-size:18px;font-weight:800">${irrTxt}</div>
-      </div>
-      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;text-align:center;">
-        <div style="font-size:12px;color:#64748b">Necesidad máx. caja</div><div style="font-size:18px;font-weight:800;color:#dc2626">${cajaTxt}</div>
-      </div>
-    </div>
+  const body = d.mesesArr.map((_, i) => ([
+    d.monthLabels[i],
+    (d.pacientesPlanif[i]||0).toLocaleString('es-ES'),
+    d.pacientesEfectivos[i].toLocaleString('es-ES'),
+    eur(d.ingresos[i]),
+    eur(d.ingresosColab?.[i]||0),
+    eur(d.cVariables[i]),
+    eur(d.cfMensual[i]),
+    eur(d.ebitda[i]),
+    eur(d.amortArr[i]),
+    eur(d.ebit[i]),
+    eur(d.intereses[i]),
+    eur(d.impuestos[i]),
+    eur(d.principal[i]),
+    eur(d.flujoNeto[i]),
+    eur(d.flujoAcum[i]),
+  ]));
 
-    <div class="page-break"></div>
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+  doc.text('Detalle mensual (todos los meses)', margin, margin);
 
-    <h2 style="margin:12px 0 8px; font-size:18px;">Detalle mensual (todos los meses)</h2>
-    <table style="width:100%; border-collapse:collapse; font-size:11px;">
-      ${th}
-      ${rows}
-    </table>
-  </div>`;
+  doc.autoTable({
+    startY: margin + 10,
+    head,
+    body,
+    styles: { fontSize: 7, cellPadding: 2, overflow: 'linebreak' },
+    headStyles: { fillColor: [241,245,249], textColor: 0, lineWidth: 0.5, lineColor: [229,231,235] },
+    bodyStyles: { lineWidth: 0.25, lineColor: [229,231,235] },
+    columnStyles: {
+      1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},
+      6:{halign:'right'},7:{halign:'right'},8:{halign:'right'},9:{halign:'right'},10:{halign:'right'},
+      11:{halign:'right'},12:{halign:'right'},13:{halign:'right'},14:{halign:'right'}
+    },
+    margin: { left: margin, right: margin },
+    didDrawPage: (data) => addFooter(doc)
+  });
 
-  const css = `
-    @page { size: A4 landscape; margin: 10mm; }
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    table th, table td { border:1px solid #e5e7eb; padding:5px 6px; }
-    table thead { background:#f1f5f9; }
-    .page-break { page-break-before: always; }
-  `;
-
-  const tmp = document.createElement('div');
-  tmp.id = 'pdfTmp';
-  tmp.style.position = 'fixed';
-  tmp.style.left = '-10000px';
-  tmp.style.top = '0';
-  tmp.innerHTML = `<style>${css}</style>${html}`;
-  document.body.appendChild(tmp);
-
-  html2pdf()
-    .set({
-      margin: 10,
-      filename: 'Informe_Financiero.pdf',
-      pagebreak: { mode: ['css', 'legacy'] },
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
-    })
-    .from(tmp)
-    .save()
-    .then(()=> tmp.remove())
-    .catch(()=> tmp.remove());
+  doc.save('Informe_Financiero.pdf');
 }
+
+function addFooter(doc){
+  const pageCount = doc.getNumberOfPages();
+  const pageW = doc.internal.pageSize.getWidth();
+  doc.setFontSize(9); doc.setTextColor(140);
+  doc.text(`Página ${pageCount}`, pageW - 60, doc.internal.pageSize.getHeight() - 10);
+  doc.setTextColor(0);
+}
+
+// Dibuja KPIs en cajas
+function drawKPIs(doc, items, x, y, width){
+  const col = items.length;
+  const w = Math.min(180, Math.floor(width / col) - 6);
+  for (let i=0;i<items.length;i++){
+    const xi = x + i*(w+6);
+    doc.setDrawColor(229,231,235); doc.setFillColor(248,250,252);
+    doc.roundedRect(xi, y, w, 60, 6, 6, 'FD');
+    doc.setFontSize(10); doc.setTextColor(80); doc.text(items[i][0], xi+10, y+18);
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(0); doc.text(String(items[i][1]), xi+10, y+40);
+    doc.setFont('helvetica','normal');
+  }
+}
+
+// Carga una imagen externa en base64 y la añade (silenciosamente si falla)
+function addImageIfPossible(doc, src, x, y, w, h){
+  return new Promise((resolve)=> {
+    if(!src) return resolve();
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { 
+      try { doc.addImage(img, 'PNG', x, y, w, h, undefined, 'FAST'); } catch(e){}
+      resolve();
+    };
+    img.onerror = () => resolve();
+    img.src = src;
+  });
+}
+</script>
+
 
 
 
