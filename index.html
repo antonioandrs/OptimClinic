@@ -2554,27 +2554,23 @@ document.getElementById('btnPDFDetalle')?.addEventListener('click', async (e) =>
 
 async function exportFinancialPDFjsPDF() {
   if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF no cargado');
+  if (!lastData) { alert('Genera el análisis primero'); return; }
+
   const { jsPDF } = window.jspdf;
-  if (!lastData) { alert('Primero genera el análisis financiero.'); return; }
-  const d = lastData;
-
-  function eurFmt(n){ const x = Math.round(Number(n||0)); return x.toLocaleString('es-ES')+' €'; }
-  function intFmt(n){ return Math.round(Number(n||0)).toLocaleString('es-ES'); }
-  function pctFmt(n){ return (Number(n)||0).toFixed(1).replace('.',',')+'%'; }
-  function sum(a){ return (a||[]).reduce((x,y)=>x+(+y||0),0); }
-
-  const empresa = document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo';
-  const responsable = document.getElementById('responsableNombre')?.value || 'Responsable';
-  const fecha = new Date().toLocaleDateString('es-ES');
-
-  const doc = new jsPDF({ orientation:'portrait', unit:'pt', format:'a4' });
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  const margin = 36;
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 40;
+  const d = lastData;
 
-  function sanitize(s){
-    return String(s||'').replace(/\u00A0/g,' ').replace(/\r?\n/g,' ');
+  function eurFmt(n){ 
+    const x = Math.round(Number(n||0));
+    return x.toLocaleString('es-ES') + ' €';
   }
+  function pctFmt(n){ return (Number(n)||0).toFixed(1).replace('.',',') + '%'; }
+  function intFmt(n){ return Math.round(Number(n||0)).toLocaleString('es-ES'); }
+  function sum(a){ return (a||[]).reduce((x,y)=>x+(+y||0),0); }
+  function stripAccents(s){ return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 
   async function imgToDataURL(url){
     try {
@@ -2586,21 +2582,30 @@ async function exportFinancialPDFjsPDF() {
   }
 
   let y = margin;
-  doc.setFont('helvetica','bold'); doc.setFontSize(22);
-  doc.text('Informe Financiero – Escenario Base', pageW/2, y, { align:'center' }); y+=26;
+
+  doc.setFont('helvetica','bold'); 
+  doc.setFontSize(22);
+  doc.text('Informe Financiero – Escenario Base', pageW/2, y, { align:'center' });
+  y += 28;
 
   const fallbackLogoURL = "https://i.imgur.com/eRKd3Hp.jpeg";
   const logoEl = document.querySelector('.logo img');
-  const logoSrc = (logoEl?.src || fallbackLogoURL).replace('imgur.com/','i.imgur.com/').replace(/(\.jpg|\.jpeg|\.png)?$/i,'.jpeg');
+  const logoSrc = (logoEl?.src && logoEl.src.startsWith('http')) ? logoEl.src : fallbackLogoURL;
+
   try {
     const dataUrl = await imgToDataURL(logoSrc);
-    if (dataUrl) doc.addImage(dataUrl, 'JPEG', margin, margin-6, 64, 64);
+    if (dataUrl) doc.addImage(dataUrl, 'JPEG', margin, margin-8, 72, 72);
   } catch {}
 
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
-  doc.text('Empresa: '+empresa, margin+74, y); y+=14;
-  doc.text('Responsable: '+responsable, margin+74, y); y+=14;
-  doc.text('Fecha: '+fecha, margin+74, y); y+=18;
+  const empresa = document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo';
+  const responsable = document.getElementById('responsableNombre')?.value || 'Responsable';
+  const fecha = new Date().toLocaleDateString('es-ES');
+
+  doc.setFont('helvetica','normal'); 
+  doc.setFontSize(11);
+  doc.text('Empresa: ' + empresa, margin+86, y); y+=14;
+  doc.text('Responsable: ' + responsable, margin+86, y); y+=14;
+  doc.text('Fecha: ' + fecha, margin+86, y); y+=18;
 
   const capex = document.getElementById('capex')?.value || 0;
   const finImporte = document.getElementById('finImporte')?.value || 0;
@@ -2611,13 +2616,14 @@ async function exportFinancialPDFjsPDF() {
 
   doc.setFont('helvetica','bold'); doc.setFontSize(12);
   doc.text('Supuestos principales', margin, y); y+=14;
+
   doc.setFont('helvetica','normal'); doc.setFontSize(11);
   [
     'CAPEX: '+eurFmt(capex)+' · Horizonte: '+d.mesesArr.length+' meses',
     'Financiación: '+eurFmt(finImporte)+' · '+Number(finInteres).toFixed(1)+'% · '+finPlazo+'m',
     'DSO aseguradoras: '+dsoTxt+' · Impuesto sociedades: '+impTxt
   ].forEach(L=>{ doc.text(L, margin, y); y+=14; });
-  y+=6;
+  y+=8;
 
   const kpiData = [
     ['Break-even', d.beMes ? ('Mes '+d.beMes+' ('+d.monthLabels[d.beMes-1]+')') : 'No alcanzado'],
@@ -2626,16 +2632,16 @@ async function exportFinancialPDFjsPDF() {
     ['TIR Anual', isFinite(d.irrAnual) ? pctFmt(d.irrAnual*100) : '—'],
     ['Necesidad máx. caja', eurFmt(d.necesidadMaxCaja)+(d.mesMinCaja?(' ('+d.mesMinCaja+')'):'')]
   ];
-  const kpiW = (pageW - margin*2) / 5;
+  const colW = (pageW - margin*2)/5;
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0;i<kpiData.length;i++){ const x=margin+i*kpiW; doc.text(kpiData[i][0], x, y); }
+  for (let i=0;i<kpiData.length;i++){ const x=margin+i*colW; doc.text(kpiData[i][0], x, y); }
   doc.setFont('helvetica','normal'); doc.setFontSize(16); y+=18;
-  for (let i=0;i<kpiData.length;i++){ const x=margin+i*kpiW; doc.text(String(kpiData[i][1]), x, y); }
-  y+=30;
+  for (let i=0;i<kpiData.length;i++){ const x=margin+i*colW; doc.text(String(kpiData[i][1]), x, y); }
+  y += 26;
 
-  const resumen = sanitize((d.analisisTexto||'').replace(/<[^>]*>/g,''));
-  const split = doc.splitTextToSize(resumen || 'Genera el análisis para ver el resumen ejecutivo.', pageW - margin*2);
-  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  const resumenPlano = stripAccents((d.analisisTexto||'').replace(/<[^>]*>/g,''));
+  const split = doc.splitTextToSize(resumenPlano || 'Genera el análisis para ver el resumen ejecutivo.', pageW - margin*2);
   doc.text(split, margin, y);
 
   doc.addPage('a4','landscape');
@@ -2735,7 +2741,6 @@ async function exportFinancialPDFjsPDF() {
 
   doc.save('Informe_Financiero.pdf');
 }
-
 
 
 function addFooter(doc){
