@@ -2552,6 +2552,45 @@ document.getElementById('btnPDFDetalle')?.addEventListener('click', async (e) =>
   }
 });
 
+/* ====== Formateadores consistentes ====== */
+function intFmt(n){
+  return new Intl.NumberFormat('es-ES', {
+    useGrouping: true,
+    maximumFractionDigits: 0
+  }).format(Math.round(n || 0));
+}
+function eurFmt(n){
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(Number(n || 0)).replace(/\u00A0/g, ' ');
+}
+function pctFmt(n){
+  if (!isFinite(n)) return '—';
+  return new Intl.NumberFormat('es-ES', {
+    maximumFractionDigits: 1
+  }).format(n) + '%';
+}
+function sum(arr){ return (arr||[]).reduce((a,b)=>a+(Number(b)||0),0); }
+
+/* ====== Utilidades logo ====== */
+async function imgToDataURL(url){
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise(r=>{
+      const f = new FileReader();
+      f.onload = ()=>r(f.result);
+      f.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 /* ====== Generación del PDF ====== */
 async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
