@@ -1,18 +1,19 @@
 /* api/gamma-prompt.js
    Genera un prompt listo para Gamma (presentación 16:9) a partir del estado actual de OptimClinic.
-   No usa módulos ES: se auto-registra en window y cablea la UI existente (#btnDossierFin + modal).
+   Se auto-registra en window y cablea la UI (#btnDossierFin + modal).
 */
 (function () {
   const $ = (id) => document.getElementById(id);
   const safe = (v, d = "") => (v === null || v === undefined || v === "" ? d : v);
 
-  // --- Serializa el estado actual desde tu UI / cálculos ---
+  // ---------- Serializa el estado actual desde la UI / cálculos ----------
   function serializeForGamma() {
     const empresa = ($('empresaNombre')?.value || 'Clínica').trim();
     const responsable = ($('responsableNombre')?.value || '').trim();
     const fecha = new Date().toISOString().slice(0, 10);
+    const contextoIA = ($('ctxIA')?.value || '').trim();
 
-    // Bloque "Inteligencia de mercado" (tomado de tu UI)
+    // Bloque "Inteligencia de mercado" (UI visible)
     const mercado = {
       provincia: $('provinciaActual')?.textContent || $('provincia')?.value || '',
       rangoConsulta: $('rangoConsulta')?.textContent || '',
@@ -75,7 +76,7 @@
       }
     };
 
-    // Resultados detallados calculados (tu variable global lastData)
+    // Resultados de cálculo (variable global lastData)
     const d = window.lastData || null;
 
     const kpis = d ? {
@@ -91,7 +92,7 @@
       pacientes_minimos_mes1: Number(d.pacientesMinimos ?? null),
     } : {};
 
-    // Serie mensual (limitamos a 36 por comodidad en slides)
+    // Serie mensual (limito a 36 para slides)
     const tablaMensual = d ? d.mesesArr.map((_, i) => ({
       mes: d.monthLabels[i],
       pacientes_efectivos: d.pacientesEfectivos[i],
@@ -104,7 +105,7 @@
       flujo_acum: d.flujoAcum[i]
     })).slice(0, 36) : [];
 
-    // Palancas top (a partir del análisis de sensibilidad ya implementado)
+    // Palancas (análisis de sensibilidad existente)
     const palancas = (() => {
       try {
         const imp = (window.calcularSensibilidad && window.calcularSensibilidad()) || [];
@@ -117,21 +118,31 @@
       } catch { return []; }
     })();
 
+    // ---------- Contenido editorial del bloque "Análisis con IA para Médicos" ----------
+    const editorial_ia = {
+      resumen_html: $('aiResumenEjecutivo')?.innerHTML || '',
+      guia_html: $('aiGuiaNoFinancieros')?.innerHTML || ''
+    };
+
     return {
-      meta: { empresa, responsable, fecha, herramienta: 'OptimClinic' },
+      meta: { empresa, responsable, fecha, herramienta: 'OptimClinic', contextoIA },
       mercado,
       entradas,
       kpis,
       resumen_viabilidad_html: d?.analisisTexto || '',
       mensual: tablaMensual,
-      palancas
+      palancas,
+      editorial_ia
     };
 
     function num(id) { const el = $(id); const v = Number(el && el.value || 0); return isFinite(v) ? v : 0; }
   }
 
-  // --- Construye el prompt completo para Gamma ---
+  // ---------- Construye el prompt completo para Gamma ----------
   function buildGammaPrompt(payload) {
+    const ctx = safe(payload.meta?.contextoIA, '').trim();
+    const contextoBloque = ctx ? `**Contexto (no mostrar):** ${ctx}\n\n` : '';
+
     const header = `
 # OptimClinic — Dossier Financiero y de Mercado
 Cliente: ${safe(payload.meta?.empresa, 'Clínica')}
@@ -139,37 +150,65 @@ Fecha: ${safe(payload.meta?.fecha, new Date().toLocaleDateString('es-ES'))}
 Idioma: Español (es-ES)
 Formato: Presentación 16:9, estilo consultoría (titulares claros, 1 idea por slide, tablas legibles, bullets cortos).
 
+**Rol**: Eres consultor financiero y de estrategia sanitaria. Redacta como consultor senior, claro y accionable.
+
 **Reglas**
 - No inventes datos: usa estrictamente el JSON adjunto.
-- Moneda: euros (formato es-ES, símbolo €).
+- Moneda: euros (formato es-ES, símbolo €) también en ejes/etiquetas.
 - Títulos breves; subtítulos con insight.
 - Evita enlaces externos o notas largas.
 `.trim();
 
     const indice = `
 ## Índice sugerido
-1. Resumen ejecutivo
-2. Situación financiera actual (KPIs, caja, break-even)
-3. Evolución mensual (ingresos, EBITDA, flujo)
-4. Sensibilidades y palancas (tornado)
-5. Mercado y posicionamiento (rango de precios, mix, DSO)
-6. Recomendaciones (90 días, riesgos, métricas de éxito)
-7. Anexo: Tabla mensual (detalle, sin redondeos agresivos)
+0. Guía para no financieros (glosario y conceptos base, 1 slide)
+1. Resumen ejecutivo (IA) con conclusiones clave
+2. Supuestos clave (tarifas, mix, no-show, DSO, financiación, capacidad)
+3. Situación financiera actual (KPIs, caja, break-even)
+4. Evolución mensual (ingresos, EBITDA, flujo)
+5. Estacionalidad y capacidad (utilización; picos/baches)
+6. Sensibilidades y palancas (gráfico tornado)
+7. Mercado y posicionamiento (rango de precios en ${safe(payload.mercado?.provincia,'—')}, mix)
+8. Recomendaciones (90 días: dueño, plazo, KPI)
+9. Anexo: Tabla mensual (detalle, sin redondeos agresivos)
 `.trim();
 
     const tareas = `
 ## Lo que quiero que generes
 - Portada profesional + resumen ejecutivo cuantificado.
-- Gráficos: 1 de KPIs, 1 de evolución, 1 de sensibilidad/palancas.
-- Tabla mensual legible (si hay >6-8 columnas, partir en 2).
+- Gráficos: KPIs, evolución mensual, sensibilidad/palancas.
+- Tabla mensual legible (si hay >6–8 columnas, partir en 2).
 - Acciones a 90 días con dueño, plazo y KPI asociado.
 `.trim();
 
+    // Bloque con HTML editorial del apartado de IA (NO mostrar como HTML literal; reescribir claro)
+    const editorialIA = `
+## Contenido editorial (no inventar; reescribir claro en slides)
+### Guía para no financieros (HTML original)
+\`\`\`html
+${(payload.editorial_ia?.guia_html || '').trim()}
+\`\`\`
+
+### Resumen ejecutivo IA (HTML original)
+\`\`\`html
+ ${(payload.editorial_ia?.resumen_html || '').trim()}
+\`\`\`
+`.trim();
+
     const jsonDatos = '```json\n' + JSON.stringify(payload, null, 2) + '\n```';
-    return `${header}\n\n${indice}\n\n${tareas}\n\n---\n**Datos (no mostrar en la presentación, solo como fuente):**\n${jsonDatos}`;
+
+    return [
+      header,
+      contextoBloque,
+      indice,
+      tareas,
+      editorialIA,
+      '\n---\n**Datos (no mostrar en la presentación, solo como fuente):**\n',
+      jsonDatos
+    ].join('\n');
   }
 
-  // --- Modal & acciones ---
+  // ---------- Modal & acciones ----------
   function openModal(text) {
     const modal = $('modalPrompt');
     const ta = $('taPrompt');
@@ -182,7 +221,6 @@ Formato: Presentación 16:9, estilo consultoría (titulares claros, 1 idea por s
     const modal = $('modalPrompt');
     if (modal) modal.style.display = 'none';
   }
-
   async function copyPrompt() {
     const ta = $('taPrompt');
     if (!ta) return;
@@ -203,12 +241,15 @@ Formato: Presentación 16:9, estilo consultoría (titulares claros, 1 idea por s
     URL.revokeObjectURL(url);
   }
 
-  // --- Init: cablea #btnDossierFin y botones del modal ---
+  // ---------- Init ----------
   function init() {
     const btn = $('btnDossierFin');
     if (btn) {
       btn.addEventListener('click', () => {
-        if (!window.lastData) { alert('Primero pulsa "📊 Generar Análisis Completo" en Planificación Financiera.'); return; }
+        if (!window.lastData) {
+          alert('Primero pulsa "📊 Generar Análisis Completo" en Planificación Financiera.');
+          return;
+        }
         const payload = serializeForGamma();
         const prompt = buildGammaPrompt(payload);
         openModal(prompt);
@@ -218,7 +259,7 @@ Formato: Presentación 16:9, estilo consultoría (titulares claros, 1 idea por s
     $('btnCopy')?.addEventListener('click', copyPrompt);
     $('btnDownload')?.addEventListener('click', downloadPrompt);
 
-    // Cerrar al hacer click fuera del card
+    // Cerrar al hacer click fuera del card del modal
     document.addEventListener('click', (e) => {
       const modal = $('modalPrompt');
       if (!modal || modal.style.display !== 'block') return;

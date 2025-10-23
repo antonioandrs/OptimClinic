@@ -240,18 +240,10 @@
             <div class="form-row-3">
               <div><label for="provincia">Provincia</label>
                 <select id="provincia" onchange="actualizarDatosMercado()">
-                  <option value="Valencia">Valencia</option>
-                  <option value="Alicante">Alicante</option>
-                  <option value="Castellón">Castellón</option>
-                  <option value="Madrid">Madrid</option>
-                  <option value="Barcelona">Barcelona</option>
-                  <option value="Sevilla">Sevilla</option>
-                  <option value="Málaga">Málaga</option>
-                  <option value="Vizcaya">Vizcaya</option>
-                  <option value="Murcia">Murcia</option>
-                  <option value="Zaragoza">Zaragoza</option>
-                  <option value="Otra">Otra</option>
-                </select>
+  <option value="" disabled selected>Selecciona…</option>
+  <!-- Las opciones se rellenan por JS -->
+  <option value="Otra">Otra</option>
+</select>
               </div>
               <div><label for="capex">CAPEX (inversión inicial) €</label><input id="capex" type="number" value="80000" /></div>
               <div><label for="meses">Meses proyección</label><input id="meses" type="number" value="36" min="6" max="84" /></div>
@@ -593,11 +585,11 @@
       <button id="aiAnalyze" class="btn btn-primary">🧠 Analizar con IA</button>
     </div>
     <div id="aiSummary" class="analysis-grid" style="display:none; margin-top:1rem;">
-      <div class="analysis-card">
+      <div class="analysis-card" id="aiResumenEjecutivo">
         <h3 class="analysis-title">🎯 Resumen Ejecutivo</h3>
         <div id="aiExecutive"></div>
       </div>
-      <div class="analysis-card">
+      <div class="analysis-card" id="aiGuiaNoFinancieros">
         <h3 class="analysis-title">📚 Guía para no financieros</h3>
         <div id="aiGlossary"></div>
       </div>
@@ -837,13 +829,34 @@
 <div class="analysis-card">
   <h3 class="analysis-title">🎞️ Presentación Gamma (Finanzas)</h3>
   <p>Genera un prompt listo para pegar en Gamma con la parte financiera (autoexplicativa) usando los datos actuales.</p>
+
+  <!-- 🔹 Aquí insertas el nuevo campo de contexto -->
+  <div class="form-row" style="margin-top:.5rem">
+    <div style="grid-column: 1 / -1;">
+      <label for="ctxIA">Contexto para la IA (opcional)</label>
+      <textarea id="ctxIA" rows="3" placeholder="Ej.: Clínica de Dermatología + Láser + Estética en A Coruña; 4 gabinetes, 3 cabinas, 1 quirófano menor; buscar asociados (reuma/alergología)…"></textarea>
+      <small class="help" style="opacity:.7">No se muestra en la presentación; sólo guía a Gamma.</small>
+    </div>
+  </div>
+
+<div class="form-row" style="margin-top:.5rem">
+  <div style="grid-column: 1 / -1;">
+    <label for="ctxIA">Contexto para la IA (opcional)</label>
+    <textarea id="ctxIA" rows="3" placeholder="Ej.: Clínica de Dermatología + Láser + Estética en A Coruña; 4 gabinetes, 3 cabinas, 1 quirófano menor; buscar asociados (reuma/alergología)…"></textarea>
+    <small class="help" style="opacity:.7">No se muestra en la presentación; sólo guía a Gamma.</small>
+  </div>
+</div>
+  <!-- 🔹 Fin del nuevo campo -->
+
   <div class="form-row">
     <button id="btnDossierFin" class="btn btn-primary">Generar dossier (Financiero)</button>
   </div>
+
   <small style="display:block; margin-top:.5rem; opacity:.75;">
     Tip: primero pulsa <strong>📊 Generar Análisis Completo</strong> en Planificación Financiera para poblar los datos.
   </small>
 </div>
+
 
 <!-- Vista previa Informe (se mantiene) -->
 <div id="reportPreview" style="display: none;">
@@ -879,6 +892,33 @@
     /* ===================== TU CÓDIGO JAVASCRIPT ORIGINAL COMPLETO ===================== */
     const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     
+/* ==== Provincias de España (completo) + rellenador del <select> ==== */
+const PROVINCIAS_ES = [
+  "Álava","Albacete","Alicante","Almería","Asturias","Ávila",
+  "Badajoz","Barcelona","Burgos","Cáceres","Cádiz","Cantabria",
+  "Castellón","Ciudad Real","Córdoba","Cuenca","Gerona (Girona)",
+  "Granada","Guadalajara","Guipúzcoa (Gipuzkoa)","Huelva","Huesca",
+  "Islas Baleares","Jaén","La Coruña (A Coruña)","La Rioja","Las Palmas",
+  "León","Lérida (Lleida)","Lugo","Madrid","Málaga","Murcia","Navarra",
+  "Orense (Ourense)","Palencia","Pontevedra","Salamanca","Segovia",
+  "Sevilla","Soria","Tarragona","Santa Cruz de Tenerife","Teruel","Toledo",
+  "Valencia","Valladolid","Vizcaya (Bizkaia)","Zamora","Zaragoza","Ceuta","Melilla"
+];
+
+function fillProvincias(){
+  const sel = document.getElementById('provincia');
+  if(!sel) return;
+  const current = sel.value; // por si ya había algo
+  const otra = `<option value="Otra">Otra</option>`;
+  sel.innerHTML =
+    `<option value="" disabled selected>Selecciona…</option>` +
+    PROVINCIAS_ES.map(p=>`<option value="${p.split(' (')[0]}">${p}</option>`).join('') +
+    otra;
+  if(current) sel.value = current;
+}
+document.addEventListener('DOMContentLoaded', fillProvincias);
+
+
     function parseMonthYYYYMM(v) {
       if (!v || !/^\d{4}-\d{2}$/.test(v)) return new Date();
       const [Y, M] = v.split('-').map(Number);
@@ -954,15 +994,15 @@
     };
 
     function actualizarDatosMercado() {
-      const provincia = getEl('provincia').value;
-      const datos = datosProvincia[provincia];
-      
-      getEl('provinciaActual').textContent = provincia;
-      getEl('rangoConsulta').textContent = datos.consulta;
-      getEl('mixPrivado').textContent = datos.mixPrivado;
-      getEl('crecimientoSector').textContent = datos.crecimiento;
-      getEl('dsoPromedio').textContent = datos.dso;
-    }
+  const provincia = getEl('provincia').value || 'Otra';
+  const datos = datosProvincia[provincia] || datosProvincia['Otra'];
+
+  getEl('provinciaActual').textContent = provincia;
+  getEl('rangoConsulta').textContent = datos.consulta;
+  getEl('mixPrivado').textContent = datos.mixPrivado;
+  getEl('crecimientoSector').textContent = datos.crecimiento;
+  getEl('dsoPromedio').textContent = datos.dso;
+}
 
     function actualizarCalculos() {
       var pctPriv = Math.max(0, num('pctPriv')) / 100;
