@@ -838,19 +838,15 @@
       <small class="help" style="opacity:.7">No se muestra en la presentación; sólo guía a Gamma.</small>
     </div>
   </div>
-
-<div class="form-row" style="margin-top:.5rem">
-  <div style="grid-column: 1 / -1;">
-    <label for="ctxIA">Contexto para la IA (opcional)</label>
-    <textarea id="ctxIA" rows="3" placeholder="Ej.: Clínica de Dermatología + Láser + Estética en A Coruña; 4 gabinetes, 3 cabinas, 1 quirófano menor; buscar asociados (reuma/alergología)…"></textarea>
-    <small class="help" style="opacity:.7">No se muestra en la presentación; sólo guía a Gamma.</small>
-  </div>
-</div>
   <!-- 🔹 Fin del nuevo campo -->
 
   <div class="form-row">
     <button id="btnDossierFin" class="btn btn-primary">Generar dossier (Financiero)</button>
   </div>
+
+<div class="form-row" style="margin-top:.5rem">
+  <button id="btnResetAll" class="btn btn-secondary">🗑️ Resetear todos los datos</button>
+</div>
 
   <small style="display:block; margin-top:.5rem; opacity:.75;">
     Tip: primero pulsa <strong>📊 Generar Análisis Completo</strong> en Planificación Financiera para poblar los datos.
@@ -3219,7 +3215,63 @@ function computeMonthlyDemand(base, m, cfg, season, marketingLift=1){
 }
 </script>
 
+<!-- 🔽 Pega aquí el auto-guardado -->
+<script>
+/* ============ AUTO-PERSISTENCIA GLOBAL ============ */
+(function(){
+  const STORAGE_KEY = 'optimclinic:v1:formstate';
+  const DEBOUNCE_MS = 300;
+  let t = null;
 
+  function qsa(s){ return Array.from(document.querySelectorAll(s)); }
+  function keyFor(el,i){ if(el.id) return el.id; if(el.name) return `name:${el.name}:${i}`; return `${el.tagName.toLowerCase()}:${i}`; }
+  function getControls(){
+    return qsa('input, select, textarea')
+      .filter(el => !el.matches('[data-nopersist], .no-persist, [type="password"]'));
+  }
+  function read(el){
+    const type=(el.type||'').toLowerCase();
+    if(type==='checkbox') return {type, v: !!el.checked};
+    if(type==='radio')    return {type, v: el.checked ? el.value : null, name: el.name};
+    if(el.tagName==='SELECT' && el.multiple) return {type:'select-multiple', v: Array.from(el.selectedOptions).map(o=>o.value)};
+    return {type:'value', v: el.value};
+  }
+  function write(el,rec){
+    if(!rec) return;
+    if(rec.type==='checkbox'){ el.checked=!!rec.v; return; }
+    if(rec.type==='radio'){ if(rec.v===el.value) el.checked=true; return; }
+    if(rec.type==='select-multiple' && Array.isArray(rec.v)){ Array.from(el.options).forEach(o=>o.selected=rec.v.includes(o.value)); return; }
+    if('v' in rec && rec.v!=null){ el.value=rec.v; el.dispatchEvent(new Event('change',{bubbles:true})); }
+  }
+  function save(){
+    try{
+      const state={};
+      getControls().forEach((el,i)=> state[keyFor(el,i)] = read(el));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }catch{}
+  }
+  function load(){
+    try{
+      const raw=localStorage.getItem(STORAGE_KEY); if(!raw) return;
+      const state=JSON.parse(raw); const ctrls=getControls();
+      ctrls.forEach((el,i)=> write(el, state[keyFor(el,i)]));
+    }catch{}
+  }
+  function resetAll(){
+    try{ localStorage.removeItem(STORAGE_KEY); }catch{}
+    location.reload();
+  }
+  function debounced(){ clearTimeout(t); t=setTimeout(save, DEBOUNCE_MS); }
+
+  document.addEventListener('DOMContentLoaded', ()=>{ load(); 
+    document.addEventListener('input', debounced, true);
+    document.addEventListener('change', debounced, true);
+    document.getElementById('btnResetAll')?.addEventListener('click', resetAll);
+  });
+
+  window.OptimPersist = { save, load, resetAll };
+})();
+</script>
 
 <!-- NUEVO: generador de prompt para Gamma -->
   <script src="api/gamma-prompt.js"></script>
