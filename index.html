@@ -2584,7 +2584,7 @@ async function imgToDataURL(url){
   }catch{ return null; }
 }
 
-/* ====== Generación del PDF ====== */
+/* ====== Generación del PDF (con KPIs en color y espaciado portada) ====== */
 async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -2599,38 +2599,30 @@ async function exportFinancialPDFjsPDF(){
   const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
   const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
 
-  // Título centrado
+  // Título centrado (dejamos buen aire para que no “pegue” con la meta)
   doc.setFont('helvetica','bold'); 
   doc.setFontSize(28);
-  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+14, { align:'center' });
+  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+18, { align:'center' });
 
   // Logo + meta (empresa/responsable) alineados a la izquierda
-  let metaX = margin, metaY = margin - 6;
+  let metaX = margin, metaYTop = margin + 8;
+  let metaY = metaYTop;
   try{
     const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
     const logoData = await imgToDataURL(logoSrc);
     if (logoData){
-      // Logo más grande
-      const w = 90, h = 90;
-      doc.addImage(logoData, 'JPEG', metaX, metaY, w, h);
-      metaX += w + 14; // texto a la derecha del logo
-      metaY += 14;
-    }else{
-      metaY = margin + 8;
-      metaX = margin;
+      const w = 96, h = 96; // logo más grande
+      doc.addImage(logoData, 'JPEG', metaX, metaYTop - 6, w, h);
+      metaX += w + 16;
     }
-  }catch{
-    metaY = margin + 8;
-    metaX = margin;
-  }
+  }catch{}
 
-  // Empresa y Responsable debajo del logo
   doc.setFont('helvetica','normal'); 
   doc.setFontSize(13);
-  doc.text('Empresa: ' + empresa, metaX, metaY); metaY += 18;
-  doc.text('Responsable: ' + responsable, metaX, metaY); metaY += 24;
+  doc.text('Empresa: ' + empresa, metaX, metaY); metaY += 20;
+  doc.text('Responsable: ' + responsable, metaX, metaY); metaY += 26;
 
-  // Supuestos (debajo de Empresa/Responsable)
+  // Supuestos (debajo de Empresa/Responsable, no debajo del título)
   const capex      = document.getElementById('capex')?.value || 0;
   const finImporte = document.getElementById('finImporte')?.value || 0;
   const finInteres = document.getElementById('finInteres')?.value || 0;
@@ -2648,21 +2640,40 @@ async function exportFinancialPDFjsPDF(){
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
   ].forEach(line => { doc.text(line, margin, metaY); metaY += 16; });
 
-  // KPIs
-  metaY += 8;
-  const kpis = [
-    ['Break-even', d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes-1] + ')') : 'No alcanzado'],
-    ['ROI Final', (isFinite(d.roiFinal) ? (Math.round(d.roiFinal) + '%') : '—')],
-    ['VAN (NPV)', eurFmt(d.npvVal)],
-    ['TIR Anual', isFinite(d.irrAnual) ? (Math.round(d.irrAnual*100) + '%') : '—'],
-    ['Necesidad máx. caja', eurFmt(d.necesidadMaxCaja) + (d.mesMinCaja?(' ('+d.mesMinCaja+')'):'')]
+  /* --- KPIs con color --- */
+  metaY += 10;
+  const kpiLabels = ['Break-even','ROI Final','VAN (NPV)','TIR Anual','Necesidad máx. caja'];
+  const kpiValues = [
+    d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes-1] + ')') : 'No alcanzado',
+    isFinite(d.roiFinal) ? (Math.round(d.roiFinal) + '%') : '—',
+    eurFmt(d.npvVal),
+    isFinite(d.irrAnual) ? (Math.round(d.irrAnual*100) + '%') : '—',
+    eurFmt(d.necesidadMaxCaja) + (d.mesMinCaja?(' ('+d.mesMinCaja+')'):'')
   ];
-  const kpiW = (pageW - 2*margin) / 5;
+  // lógica de color (verde/rojo)
+  const kpiColors = [
+    d.beMes ? 'green' : 'red',                                   // Break-even alcanzado o no
+    (isFinite(d.roiFinal) && d.roiFinal !== 0) ? (d.roiFinal>0?'green':'red') : 'black',
+    (isFinite(d.npvVal)   && d.npvVal   !== 0) ? (d.npvVal  >0?'green':'red') : 'black',
+    (isFinite(d.irrAnual) && d.irrAnual !== 0) ? (d.irrAnual>0?'green':'red') : 'black',
+    (isFinite(d.necesidadMaxCaja) ? (d.necesidadMaxCaja<=0 ? 'green':'red') : 'black')
+  ];
+  const green = [5,150,105], red = [220,38,38], black = [17,24,39];
 
+  const kpiW = (pageW - 2*margin) / 5;
+  // Etiquetas
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0;i<5;i++) doc.text(kpis[i][0], margin + i*kpiW, metaY);
-  doc.setFont('helvetica','normal'); doc.setFontSize(16); metaY += 20;
-  for (let i=0;i<5;i++) doc.text(String(kpis[i][1]), margin + i*kpiW, metaY);
+  for (let i=0;i<5;i++) doc.text(kpiLabels[i], margin + i*kpiW, metaY);
+  // Valores con color
+  doc.setFont('helvetica','normal'); doc.setFontSize(16);
+  metaY += 20;
+  for (let i=0;i<5;i++){
+    const c = (kpiColors[i]==='green'?green:(kpiColors[i]==='red'?red:black));
+    doc.setTextColor(...c);
+    doc.text(String(kpiValues[i]), margin + i*kpiW, metaY);
+  }
+  // reset a negro
+  doc.setTextColor(0,0,0);
 
   /* --- Tabla mensual en PÁGINA NUEVA --- */
   doc.addPage('a4','landscape');
@@ -2742,10 +2753,8 @@ async function exportFinancialPDFjsPDF(){
     didParseCell: (data) => {
       const col = data.column.index;
 
-      // Centrar la celda "Totales"
-      if (data.section === 'foot' && col === 0) {
-        data.cell.styles.halign = 'center';
-      }
+      // Centrar “Totales”
+      if (data.section === 'foot' && col === 0) data.cell.styles.halign = 'center';
 
       // Colorear EBITDA / EBIT / Flujo / Acum. (cuerpo)
       if (data.section === 'body' && (col===7 || col===9 || col===13 || col===14)) {
