@@ -2595,49 +2595,61 @@ async function exportFinancialPDFjsPDF(){
   if (!window.lastData){ alert('Genere el análisis primero'); return; }
   const d = window.lastData;
 
-  /* --- Cabecera / Portada --- */
+  /* --- Portada: logo grande arriba-izquierda + Empresa/Responsable debajo --- */
   const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
   const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
 
-  // Título
+  // Título centrado
   doc.setFont('helvetica','bold'); 
   doc.setFontSize(28);
   doc.text('Informe Financiero – Escenario Base', pageW/2, margin+14, { align:'center' });
 
-  // Logo
+  // Logo + meta (empresa/responsable) alineados a la izquierda
+  let metaX = margin, metaY = margin - 6;
   try{
     const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
     const logoData = await imgToDataURL(logoSrc);
-    if (logoData) doc.addImage(logoData, 'JPEG', margin, margin-6, 66, 66);
-  }catch{}
+    if (logoData){
+      // Logo más grande
+      const w = 90, h = 90;
+      doc.addImage(logoData, 'JPEG', metaX, metaY, w, h);
+      metaX += w + 14; // texto a la derecha del logo
+      metaY += 14;
+    }else{
+      metaY = margin + 8;
+      metaX = margin;
+    }
+  }catch{
+    metaY = margin + 8;
+    metaX = margin;
+  }
 
-  // Empresa / Responsable, con más aire bajo el título
-  let y = margin + 40;
+  // Empresa y Responsable debajo del logo
   doc.setFont('helvetica','normal'); 
   doc.setFontSize(13);
-  doc.text('Empresa: ' + empresa, margin+80, y); y += 18;
-  doc.text('Responsable: ' + responsable, margin+80, y); y += 18;
+  doc.text('Empresa: ' + empresa, metaX, metaY); metaY += 18;
+  doc.text('Responsable: ' + responsable, metaX, metaY); metaY += 24;
 
-  // Supuestos
-  const capex = document.getElementById('capex')?.value || 0;
+  // Supuestos (debajo de Empresa/Responsable)
+  const capex      = document.getElementById('capex')?.value || 0;
   const finImporte = document.getElementById('finImporte')?.value || 0;
   const finInteres = document.getElementById('finInteres')?.value || 0;
-  const finPlazo = document.getElementById('finPlazo')?.value || 0;
-  const dsoTxt = document.getElementById('toggleDSO')?.checked ? (document.getElementById('dsoAseg')?.value + ' días') : 'No aplica';
-  const impTxt = document.getElementById('toggleImp')?.checked ? ((Number(document.getElementById('impSoc')?.value||0)).toFixed(1).replace('.',',') + '%') : '—';
+  const finPlazo   = document.getElementById('finPlazo')?.value || 0;
+  const dsoTxt     = document.getElementById('toggleDSO')?.checked ? (document.getElementById('dsoAseg')?.value + ' días') : 'No aplica';
+  const impTxt     = document.getElementById('toggleImp')?.checked ? ((Number(document.getElementById('impSoc')?.value||0)).toFixed(1).replace('.',',') + '%') : '—';
 
   doc.setFont('helvetica','bold'); doc.setFontSize(14);
-  doc.text('Supuestos principales', margin, y); y += 18;
+  doc.text('Supuestos principales', margin, metaY); metaY += 18;
 
   doc.setFont('helvetica','normal'); doc.setFontSize(12);
   [
     'CAPEX: ' + eurFmt(capex) + ' · Horizonte: ' + d.mesesArr.length + ' meses',
     'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres||0).toFixed(1).replace('.',',') + '% · ' + finPlazo + 'm',
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
-  ].forEach(line => { doc.text(line, margin, y); y += 16; });
+  ].forEach(line => { doc.text(line, margin, metaY); metaY += 16; });
 
   // KPIs
-  y += 8;
+  metaY += 8;
   const kpis = [
     ['Break-even', d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes-1] + ')') : 'No alcanzado'],
     ['ROI Final', (isFinite(d.roiFinal) ? (Math.round(d.roiFinal) + '%') : '—')],
@@ -2648,9 +2660,9 @@ async function exportFinancialPDFjsPDF(){
   const kpiW = (pageW - 2*margin) / 5;
 
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0;i<5;i++) doc.text(kpis[i][0], margin + i*kpiW, y);
-  doc.setFont('helvetica','normal'); doc.setFontSize(16); y += 20;
-  for (let i=0;i<5;i++) doc.text(String(kpis[i][1]), margin + i*kpiW, y);
+  for (let i=0;i<5;i++) doc.text(kpis[i][0], margin + i*kpiW, metaY);
+  doc.setFont('helvetica','normal'); doc.setFontSize(16); metaY += 20;
+  for (let i=0;i<5;i++) doc.text(String(kpis[i][1]), margin + i*kpiW, metaY);
 
   /* --- Tabla mensual en PÁGINA NUEVA --- */
   doc.addPage('a4','landscape');
@@ -2712,13 +2724,14 @@ async function exportFinancialPDFjsPDF(){
     eurFmt(totals.acum)
   ]];
 
+  // columnas numéricas alineadas a la derecha
   const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
 
   doc.autoTable({
     head, body, foot,
     startY: margin,
     theme: 'grid',
-    tableWidth: (pageW - 2*margin),               // ajustar a ancho útil
+    tableWidth: (pageW - 2*margin),
     styles: { font: 'helvetica', fontSize: 10, cellPadding: 4, overflow: 'linebreak' },
     headStyles: { fillColor: [37,99,235], textColor: 255, fontStyle: 'bold' },
     footStyles: { fillColor: [241,245,249], textColor: [17,24,39], fontStyle: 'bold' },
@@ -2734,15 +2747,17 @@ async function exportFinancialPDFjsPDF(){
         data.cell.styles.halign = 'center';
       }
 
-      // Colorear EBITDA / Flujo / Acum.
-      if (data.section === 'body' && (col===7 || col===13 || col===14)) {
-        const ref = (col===7 ? d.ebitda : (col===13 ? d.flujoNeto : d.flujoAcum));
+      // Colorear EBITDA / EBIT / Flujo / Acum. (cuerpo)
+      if (data.section === 'body' && (col===7 || col===9 || col===13 || col===14)) {
+        const ref = (col===7 ? d.ebitda : col===9 ? d.ebit : (col===13 ? d.flujoNeto : d.flujoAcum));
         const raw = Number(ref[data.row.index]||0);
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
         if (raw > 0) data.cell.styles.textColor = [5,150,105];
       }
-      if (data.section === 'foot' && (col===7 || col===13 || col===14)) {
-        const raw = (col===7 ? totals.ebitda : (col===13 ? totals.flujo : totals.acum));
+
+      // Colorear totales de EBITDA / EBIT / Flujo / Acum.
+      if (data.section === 'foot' && (col===7 || col===9 || col===13 || col===14)) {
+        const raw = (col===7 ? totals.ebitda : col===9 ? totals.ebit : (col===13 ? totals.flujo : totals.acum));
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
         if (raw > 0) data.cell.styles.textColor = [5,150,105];
       }
@@ -2756,6 +2771,7 @@ async function exportFinancialPDFjsPDF(){
 
   doc.save('Informe_Financiero.pdf');
 }
+
 
 
 
