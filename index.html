@@ -2612,7 +2612,7 @@ async function imgToDataURL(url){
     });
   }catch{ return null; }
 }
-/* ====== Generación del PDF (portada + KPIs color + gráficos + tabla) ====== */
+/* ====== Generación del PDF (portada alineada + KPIs color + gráficos con ratio + tabla) ====== */
 async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -2620,7 +2620,7 @@ async function exportFinancialPDFjsPDF(){
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
-  const HEADER_SAFE = 150;  // baja todo el bloque para evitar solapes
+  const HEADER_SAFE = 150;     // baja el contenido para evitar solapes
 
   if (!window.lastData){ alert('Genere el análisis primero'); return; }
   const d = window.lastData;
@@ -2629,31 +2629,31 @@ async function exportFinancialPDFjsPDF(){
   const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
   const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
 
-  // Título centrado
+  // Título
   doc.setFont('helvetica','bold'); 
   doc.setFontSize(32);
   doc.text('Informe Financiero – Escenario Base', pageW/2, margin+28, { align:'center' });
 
-  // Logo arriba-izquierda (solo si carga OK; sin logo no movemos el texto)
-  let metaX = margin + 110;      // dejamos hueco para el logo
-  let metaY = margin + HEADER_SAFE;
+  // Logo arriba-izq
+  let logoBottom = margin + 20;
   try{
     const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
     const logoData = await imgToDataURL(logoSrc);
     if (logoData){
       const w = 100, h = 100;
       doc.addImage(logoData, 'JPEG', margin, margin+20, w, h);
-      metaX = margin + w + 18;
-    }else{
-      metaX = margin;
+      logoBottom = margin + 20 + h;
     }
-  }catch{ metaX = margin; }
+  }catch{}
 
-  // Empresa / Responsable
+  // Punto de inicio bajo logo y zona segura
+  let y = Math.max(logoBottom + 18, margin + HEADER_SAFE);
+
+  // Empresa / Responsable (alineados a la IZQUIERDA = margin)
   doc.setFont('helvetica','normal'); 
   doc.setFontSize(14);
-  doc.text('Empresa: ' + empresa, metaX, metaY); metaY += 22;
-  doc.text('Responsable: ' + responsable, metaX, metaY); metaY += 28;
+  doc.text('Empresa: ' + empresa, margin, y); y += 22;
+  doc.text('Responsable: ' + responsable, margin, y); y += 28;
 
   // Supuestos
   const capex      = document.getElementById('capex')?.value || 0;
@@ -2664,17 +2664,17 @@ async function exportFinancialPDFjsPDF(){
   const impTxt     = document.getElementById('toggleImp')?.checked ? ((Number(document.getElementById('impSoc')?.value||0)).toFixed(1).replace('.',',') + '%') : '—';
 
   doc.setFont('helvetica','bold'); doc.setFontSize(16);
-  doc.text('Supuestos principales', margin, metaY); metaY += 20;
+  doc.text('Supuestos principales', margin, y); y += 20;
 
   doc.setFont('helvetica','normal'); doc.setFontSize(12);
   [
     'CAPEX: ' + eurFmt(capex) + ' · Horizonte: ' + d.mesesArr.length + ' meses',
     'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres||0).toFixed(1).replace('.',',') + '% · ' + finPlazo + 'm',
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
-  ].forEach(line => { doc.text(line, margin, metaY); metaY += 16; });
+  ].forEach(line => { doc.text(line, margin, y); y += 16; });
 
   /* ---------- KPIs (con color) ---------- */
-  metaY += 12;
+  y += 12;
   const kpiLabels = ['Break-even','ROI Final','VAN (NPV)','TIR Anual','Necesidad máx. caja'];
   const kpiValues = [
     d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes-1] + ')') : 'No alcanzado',
@@ -2693,30 +2693,49 @@ async function exportFinancialPDFjsPDF(){
   const kpiW = (pageW - 2*margin) / 5;
 
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0;i<5;i++) doc.text(kpiLabels[i], margin + i*kpiW, metaY);
-  doc.setFont('helvetica','normal'); doc.setFontSize(18); metaY += 22;
-  for (let i=0;i<5;i++){ doc.setTextColor(...kpiColors[i]); doc.text(String(kpiValues[i]), margin + i*kpiW, metaY); }
+  for (let i=0;i<5;i++) doc.text(kpiLabels[i], margin + i*kpiW, y);
+  doc.setFont('helvetica','normal'); doc.setFontSize(18); y += 22;
+  for (let i=0;i<5;i++){ doc.setTextColor(...kpiColors[i]); doc.text(String(kpiValues[i]), margin + i*kpiW, y); }
   doc.setTextColor(0,0,0);
 
-  /* ---------- Gráficos al pie de la 1ª página ---------- */
+  /* ---------- Gráficos al final de la 1ª página (manteniendo ratio + títulos) ---------- */
   try{
-    const pnl = document.getElementById('chartPnl');
+    const pnl  = document.getElementById('chartPnl');
     const cash = document.getElementById('chartCash');
-    // Dimensiones (dos gráficos lado a lado)
-    const gPad = 10;
-    const gW = (pageW - 2*margin - gPad) / 2;
-    const gH = 200;
-    const gY = pageH - margin - gH; // pegados a la parte inferior de la primera página
 
+    const gap = 14;
+    const availableW = pageW - 2*margin - gap;
+    // tomamos el ratio del canvas real para evitar achatado
+    const getDims = (canvas, targetW)=>{
+      const cw = canvas?.width || 800, ch = canvas?.height || 400;
+      const ratio = ch / cw;
+      const w = targetW;
+      const h = Math.min(260, w * ratio); // límite razonable de altura
+      return { w, h };
+    };
+
+    const dimsLeft  = getDims(pnl,  availableW/2);
+    const dimsRight = getDims(cash, availableW/2);
+    const gH = Math.max(dimsLeft.h, dimsRight.h);
+    const startY = pageH - margin - gH - 26; // 26px para el título encima de cada gráfico
+
+    // Título + gráfico 1
+    doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text('P&L Operativo', margin, startY);
     if (pnl && pnl.toDataURL){
       const imgPnl = pnl.toDataURL('image/png', 1.0);
-      doc.addImage(imgPnl, 'PNG', margin, gY, gW, gH);
+      doc.addImage(imgPnl, 'PNG', margin, startY+8, dimsLeft.w, dimsLeft.h);
     }
+
+    // Título + gráfico 2
+    const rightX = margin + dimsLeft.w + gap;
+    doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text('Flujo de Caja', rightX, startY);
     if (cash && cash.toDataURL){
       const imgCash = cash.toDataURL('image/png', 1.0);
-      doc.addImage(imgCash, 'PNG', margin + gW + gPad, gY, gW, gH);
+      doc.addImage(imgCash, 'PNG', rightX, startY+8, dimsRight.w, dimsRight.h);
     }
-  }catch(e){ /* si no hay canvas no pasa nada */ }
+  }catch(e){ /* si no hay canvas, omitimos */ }
 
   /* ---------- Tabla (segunda página) ---------- */
   doc.addPage('a4','landscape');
@@ -2794,19 +2813,13 @@ async function exportFinancialPDFjsPDF(){
     ]),
     didParseCell: (data) => {
       const col = data.column.index;
-
-      // "Totales" centrado
       if (data.section === 'foot' && col === 0) data.cell.styles.halign = 'center';
-
-      // Cuerpo: EBITDA (7), EBIT (9), Flujo (13), Acum (14) con color
       if (data.section === 'body' && (col===7 || col===9 || col===13 || col===14)) {
         const ref = (col===7 ? d.ebitda : col===9 ? d.ebit : (col===13 ? d.flujoNeto : d.flujoAcum));
         const raw = Number(ref[data.row.index]||0);
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
         if (raw > 0) data.cell.styles.textColor = [5,150,105];
       }
-
-      // Totales: mismas columnas en color
       if (data.section === 'foot' && (col===7 || col===9 || col===13 || col===14)) {
         const raw = (col===7 ? totals.ebitda : col===9 ? totals.ebit : (col===13 ? totals.flujo : totals.acum));
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
