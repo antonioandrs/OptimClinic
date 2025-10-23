@@ -153,7 +153,33 @@
     .analysis-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin: 1.5rem 0; }
     .analysis-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; box-shadow: var(--shadow-lg); }
     .analysis-title { margin: 0 0 1rem; font-size: 1.1rem; font-weight: 700; color: var(--primary); }
-  </style>
+
+  /* ===== Overrides de alineación para la tabla #tabla ===== */
+  /* Encabezado: sin cambios, solo evitar cortes raros */
+  #tabla thead th { white-space: nowrap; }
+
+  /* Cuerpo y pie: de la 2ª columna en adelante, todo a la DERECHA */
+  #tabla tbody td:nth-child(n+2),
+  #tabla tfoot td:nth-child(n+2),
+  #tabla th.num {
+    text-align: right !important;
+  }
+
+  /* Fila de totales: la primera celda “Totales” centrada; resto derecha y en negrita */
+  #tabla tfoot td:first-child {
+    text-align: center !important;
+    font-weight: 700;
+  }
+  #tabla tfoot td {
+    text-align: right !important;
+    font-weight: 700;
+  }
+
+  /* Colores positivo/negativo reutilizables (por si no estuvieran definidos) */
+  .table-success { color: #059669; }
+  .table-danger  { color: #dc2626; }
+</style>
+
 </head>
 <body>
   <header class="header">
@@ -2584,45 +2610,50 @@ async function imgToDataURL(url){
   }catch{ return null; }
 }
 
-/* ====== Generación del PDF (con KPIs en color y espaciado portada) ====== */
+/* ====== Generación del PDF (zona segura portada + KPIs color) ====== */
 async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
+  const HEADER_SAFE = 140; // ← espacio libre arriba: baja todo el contenido
 
   if (!window.lastData){ alert('Genere el análisis primero'); return; }
   const d = window.lastData;
 
-  /* --- Portada: logo grande arriba-izquierda + Empresa/Responsable debajo --- */
+  /* --- Portada --- */
   const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
   const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
 
-  // Título centrado (dejamos buen aire para que no “pegue” con la meta)
+  // Título centrado (alto)
   doc.setFont('helvetica','bold'); 
   doc.setFontSize(28);
-  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+18, { align:'center' });
+  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+20, { align:'center' });
 
-  // Logo + meta (empresa/responsable) alineados a la izquierda
-  let metaX = margin, metaYTop = margin + 8;
-  let metaY = metaYTop;
+  // Logo arriba-izquierda
+  let metaX = margin, logoBottom = margin + 20;
   try{
     const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
     const logoData = await imgToDataURL(logoSrc);
     if (logoData){
-      const w = 96, h = 96; // logo más grande
-      doc.addImage(logoData, 'JPEG', metaX, metaYTop - 6, w, h);
-      metaX += w + 16;
+      const w = 96, h = 96;
+      doc.addImage(logoData, 'JPEG', margin, margin, w, h);
+      logoBottom = margin + h; // por si quieres afinar más adelante
+      metaX = margin + w + 16;
     }
   }catch{}
 
+  // Punto de inicio del contenido (zona segura)
+  let y = margin + HEADER_SAFE;
+
+  // Empresa / Responsable
   doc.setFont('helvetica','normal'); 
   doc.setFontSize(13);
-  doc.text('Empresa: ' + empresa, metaX, metaY); metaY += 20;
-  doc.text('Responsable: ' + responsable, metaX, metaY); metaY += 26;
+  doc.text('Empresa: ' + empresa, metaX, y); y += 20;
+  doc.text('Responsable: ' + responsable, metaX, y); y += 26;
 
-  // Supuestos (debajo de Empresa/Responsable, no debajo del título)
+  // Supuestos
   const capex      = document.getElementById('capex')?.value || 0;
   const finImporte = document.getElementById('finImporte')?.value || 0;
   const finInteres = document.getElementById('finInteres')?.value || 0;
@@ -2631,17 +2662,17 @@ async function exportFinancialPDFjsPDF(){
   const impTxt     = document.getElementById('toggleImp')?.checked ? ((Number(document.getElementById('impSoc')?.value||0)).toFixed(1).replace('.',',') + '%') : '—';
 
   doc.setFont('helvetica','bold'); doc.setFontSize(14);
-  doc.text('Supuestos principales', margin, metaY); metaY += 18;
+  doc.text('Supuestos principales', margin, y); y += 18;
 
   doc.setFont('helvetica','normal'); doc.setFontSize(12);
   [
     'CAPEX: ' + eurFmt(capex) + ' · Horizonte: ' + d.mesesArr.length + ' meses',
     'Financiación: ' + eurFmt(finImporte) + ' · ' + Number(finInteres||0).toFixed(1).replace('.',',') + '% · ' + finPlazo + 'm',
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
-  ].forEach(line => { doc.text(line, margin, metaY); metaY += 16; });
+  ].forEach(line => { doc.text(line, margin, y); y += 16; });
 
   /* --- KPIs con color --- */
-  metaY += 10;
+  y += 12;
   const kpiLabels = ['Break-even','ROI Final','VAN (NPV)','TIR Anual','Necesidad máx. caja'];
   const kpiValues = [
     d.beMes ? ('Mes ' + d.beMes + ' (' + d.monthLabels[d.beMes-1] + ')') : 'No alcanzado',
@@ -2650,9 +2681,8 @@ async function exportFinancialPDFjsPDF(){
     isFinite(d.irrAnual) ? (Math.round(d.irrAnual*100) + '%') : '—',
     eurFmt(d.necesidadMaxCaja) + (d.mesMinCaja?(' ('+d.mesMinCaja+')'):'')
   ];
-  // lógica de color (verde/rojo)
   const kpiColors = [
-    d.beMes ? 'green' : 'red',                                   // Break-even alcanzado o no
+    d.beMes ? 'green' : 'red',
     (isFinite(d.roiFinal) && d.roiFinal !== 0) ? (d.roiFinal>0?'green':'red') : 'black',
     (isFinite(d.npvVal)   && d.npvVal   !== 0) ? (d.npvVal  >0?'green':'red') : 'black',
     (isFinite(d.irrAnual) && d.irrAnual !== 0) ? (d.irrAnual>0?'green':'red') : 'black',
@@ -2661,18 +2691,14 @@ async function exportFinancialPDFjsPDF(){
   const green = [5,150,105], red = [220,38,38], black = [17,24,39];
 
   const kpiW = (pageW - 2*margin) / 5;
-  // Etiquetas
   doc.setFont('helvetica','bold'); doc.setFontSize(11);
-  for (let i=0;i<5;i++) doc.text(kpiLabels[i], margin + i*kpiW, metaY);
-  // Valores con color
-  doc.setFont('helvetica','normal'); doc.setFontSize(16);
-  metaY += 20;
+  for (let i=0;i<5;i++) doc.text(kpiLabels[i], margin + i*kpiW, y);
+  doc.setFont('helvetica','normal'); doc.setFontSize(16); y += 20;
   for (let i=0;i<5;i++){
     const c = (kpiColors[i]==='green'?green:(kpiColors[i]==='red'?red:black));
     doc.setTextColor(...c);
-    doc.text(String(kpiValues[i]), margin + i*kpiW, metaY);
+    doc.text(String(kpiValues[i]), margin + i*kpiW, y);
   }
-  // reset a negro
   doc.setTextColor(0,0,0);
 
   /* --- Tabla mensual en PÁGINA NUEVA --- */
@@ -2735,7 +2761,6 @@ async function exportFinancialPDFjsPDF(){
     eurFmt(totals.acum)
   ]];
 
-  // columnas numéricas alineadas a la derecha
   const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
 
   doc.autoTable({
@@ -2752,19 +2777,16 @@ async function exportFinancialPDFjsPDF(){
     ]),
     didParseCell: (data) => {
       const col = data.column.index;
-
-      // Centrar “Totales”
       if (data.section === 'foot' && col === 0) data.cell.styles.halign = 'center';
 
-      // Colorear EBITDA / EBIT / Flujo / Acum. (cuerpo)
+      // Cuerpo: EBITDA / EBIT / Flujo / Acum. en color
       if (data.section === 'body' && (col===7 || col===9 || col===13 || col===14)) {
         const ref = (col===7 ? d.ebitda : col===9 ? d.ebit : (col===13 ? d.flujoNeto : d.flujoAcum));
         const raw = Number(ref[data.row.index]||0);
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
         if (raw > 0) data.cell.styles.textColor = [5,150,105];
       }
-
-      // Colorear totales de EBITDA / EBIT / Flujo / Acum.
+      // Totales: mismas columnas en color
       if (data.section === 'foot' && (col===7 || col===9 || col===13 || col===14)) {
         const raw = (col===7 ? totals.ebitda : col===9 ? totals.ebit : (col===13 ? totals.flujo : totals.acum));
         if (raw < 0) data.cell.styles.textColor = [220,38,38];
@@ -2780,6 +2802,7 @@ async function exportFinancialPDFjsPDF(){
 
   doc.save('Informe_Financiero.pdf');
 }
+
 
 
 
