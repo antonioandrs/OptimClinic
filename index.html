@@ -2612,7 +2612,7 @@ async function imgToDataURL(url){
     });
   }catch{ return null; }
 }
-/* ====== Generación del PDF (portada alineada + KPIs color + gráficos con ratio + tabla) ====== */
+/* ====== Generación del PDF (alineado, autoajuste y gráficos seguros) ====== */
 async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -2620,7 +2620,7 @@ async function exportFinancialPDFjsPDF(){
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
-  const HEADER_SAFE = 150;     // baja el contenido para evitar solapes
+  const HEADER_SAFE = 180;   // más aire superior
 
   if (!window.lastData){ alert('Genere el análisis primero'); return; }
   const d = window.lastData;
@@ -2632,7 +2632,7 @@ async function exportFinancialPDFjsPDF(){
   // Título
   doc.setFont('helvetica','bold'); 
   doc.setFontSize(32);
-  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+28, { align:'center' });
+  doc.text('Informe Financiero – Escenario Base', pageW/2, margin+32, { align:'center' });
 
   // Logo arriba-izq
   let logoBottom = margin + 20;
@@ -2641,19 +2641,17 @@ async function exportFinancialPDFjsPDF(){
     const logoData = await imgToDataURL(logoSrc);
     if (logoData){
       const w = 100, h = 100;
-      doc.addImage(logoData, 'JPEG', margin, margin+20, w, h);
-      logoBottom = margin + 20 + h;
+      doc.addImage(logoData, 'JPEG', margin, margin+24, w, h);
+      logoBottom = margin + 24 + h;
     }
   }catch{}
 
-  // Punto de inicio bajo logo y zona segura
-  let y = Math.max(logoBottom + 18, margin + HEADER_SAFE);
-
-  // Empresa / Responsable (alineados a la IZQUIERDA = margin)
+  // Bloque de texto alineado a la izquierda
+  let y = Math.max(logoBottom + 24, margin + HEADER_SAFE);
   doc.setFont('helvetica','normal'); 
   doc.setFontSize(14);
   doc.text('Empresa: ' + empresa, margin, y); y += 22;
-  doc.text('Responsable: ' + responsable, margin, y); y += 28;
+  doc.text('Responsable: ' + responsable, margin, y); y += 30;
 
   // Supuestos
   const capex      = document.getElementById('capex')?.value || 0;
@@ -2673,7 +2671,7 @@ async function exportFinancialPDFjsPDF(){
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
   ].forEach(line => { doc.text(line, margin, y); y += 16; });
 
-  /* ---------- KPIs (con color) ---------- */
+  /* ---------- KPIs ---------- */
   y += 12;
   const kpiLabels = ['Break-even','ROI Final','VAN (NPV)','TIR Anual','Necesidad máx. caja'];
   const kpiValues = [
@@ -2685,10 +2683,10 @@ async function exportFinancialPDFjsPDF(){
   ];
   const kpiColors = [
     d.beMes ? [5,150,105] : [220,38,38],
-    (isFinite(d.roiFinal) && d.roiFinal!==0) ? (d.roiFinal>0?[5,150,105]:[220,38,38]) : [17,24,39],
-    (isFinite(d.npvVal)   && d.npvVal  !==0) ? (d.npvVal  >0?[5,150,105]:[220,38,38]) : [17,24,39],
-    (isFinite(d.irrAnual) && d.irrAnual!==0) ? (d.irrAnual>0?[5,150,105]:[220,38,38]) : [17,24,39],
-    (isFinite(d.necesidadMaxCaja) ? (d.necesidadMaxCaja<=0 ? [5,150,105] : [220,38,38]) : [17,24,39])
+    (isFinite(d.roiFinal)&&d.roiFinal!==0)?(d.roiFinal>0?[5,150,105]:[220,38,38]):[17,24,39],
+    (isFinite(d.npvVal)&&d.npvVal!==0)?(d.npvVal>0?[5,150,105]:[220,38,38]):[17,24,39],
+    (isFinite(d.irrAnual)&&d.irrAnual!==0)?(d.irrAnual>0?[5,150,105]:[220,38,38]):[17,24,39],
+    (isFinite(d.necesidadMaxCaja)?(d.necesidadMaxCaja<=0?[5,150,105]:[220,38,38]):[17,24,39])
   ];
   const kpiW = (pageW - 2*margin) / 5;
 
@@ -2698,48 +2696,44 @@ async function exportFinancialPDFjsPDF(){
   for (let i=0;i<5;i++){ doc.setTextColor(...kpiColors[i]); doc.text(String(kpiValues[i]), margin + i*kpiW, y); }
   doc.setTextColor(0,0,0);
 
-  /* ---------- Gráficos al final de la 1ª página (manteniendo ratio + títulos) ---------- */
+  /* ---------- Gráficos (debajo del texto, nunca montados) ---------- */
   try{
     const pnl  = document.getElementById('chartPnl');
     const cash = document.getElementById('chartCash');
-
     const gap = 14;
     const availableW = pageW - 2*margin - gap;
-    // tomamos el ratio del canvas real para evitar achatado
     const getDims = (canvas, targetW)=>{
       const cw = canvas?.width || 800, ch = canvas?.height || 400;
       const ratio = ch / cw;
       const w = targetW;
-      const h = Math.min(260, w * ratio); // límite razonable de altura
+      const h = Math.min(260, w * ratio);
       return { w, h };
     };
-
     const dimsLeft  = getDims(pnl,  availableW/2);
     const dimsRight = getDims(cash, availableW/2);
     const gH = Math.max(dimsLeft.h, dimsRight.h);
-    const startY = pageH - margin - gH - 26; // 26px para el título encima de cada gráfico
+    const gY = y + 60; // deja 60pt entre KPIs y gráficos
 
     // Título + gráfico 1
     doc.setFont('helvetica','bold'); doc.setFontSize(14);
-    doc.text('P&L Operativo', margin, startY);
+    doc.text('P&L Operativo', margin, gY);
     if (pnl && pnl.toDataURL){
       const imgPnl = pnl.toDataURL('image/png', 1.0);
-      doc.addImage(imgPnl, 'PNG', margin, startY+8, dimsLeft.w, dimsLeft.h);
+      doc.addImage(imgPnl, 'PNG', margin, gY+8, dimsLeft.w, dimsLeft.h);
     }
 
     // Título + gráfico 2
     const rightX = margin + dimsLeft.w + gap;
     doc.setFont('helvetica','bold'); doc.setFontSize(14);
-    doc.text('Flujo de Caja', rightX, startY);
+    doc.text('Flujo de Caja', rightX, gY);
     if (cash && cash.toDataURL){
       const imgCash = cash.toDataURL('image/png', 1.0);
-      doc.addImage(imgCash, 'PNG', rightX, startY+8, dimsRight.w, dimsRight.h);
+      doc.addImage(imgCash, 'PNG', rightX, gY+8, dimsRight.w, dimsRight.h);
     }
-  }catch(e){ /* si no hay canvas, omitimos */ }
+  }catch(e){}
 
-  /* ---------- Tabla (segunda página) ---------- */
+  /* ---------- Tabla en nueva página ---------- */
   doc.addPage('a4','landscape');
-
   const head = [[
     'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos','EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
   ]];
@@ -2798,13 +2792,12 @@ async function exportFinancialPDFjsPDF(){
   ]];
 
   const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
-
   doc.autoTable({
     head, body, foot,
     startY: margin,
     theme: 'grid',
     tableWidth: (pageW - 2*margin),
-    styles: { font: 'helvetica', fontSize: 10, cellPadding: 4, overflow: 'linebreak' },
+    styles: { font: 'helvetica', fontSize: 10, cellPadding: 4 },
     headStyles: { fillColor: [37,99,235], textColor: 255, fontStyle: 'bold' },
     footStyles: { fillColor: [241,245,249], textColor: [17,24,39], fontStyle: 'bold' },
     columnStyles: Object.fromEntries([
@@ -2814,16 +2807,16 @@ async function exportFinancialPDFjsPDF(){
     didParseCell: (data) => {
       const col = data.column.index;
       if (data.section === 'foot' && col === 0) data.cell.styles.halign = 'center';
-      if (data.section === 'body' && (col===7 || col===9 || col===13 || col===14)) {
-        const ref = (col===7 ? d.ebitda : col===9 ? d.ebit : (col===13 ? d.flujoNeto : d.flujoAcum));
-        const raw = Number(ref[data.row.index]||0);
-        if (raw < 0) data.cell.styles.textColor = [220,38,38];
-        if (raw > 0) data.cell.styles.textColor = [5,150,105];
+      if (data.section === 'body' && (col===7||col===9||col===13||col===14)){
+        const ref=(col===7?d.ebitda:col===9?d.ebit:(col===13?d.flujoNeto:d.flujoAcum));
+        const raw=Number(ref[data.row.index]||0);
+        if (raw<0) data.cell.styles.textColor=[220,38,38];
+        if (raw>0) data.cell.styles.textColor=[5,150,105];
       }
-      if (data.section === 'foot' && (col===7 || col===9 || col===13 || col===14)) {
-        const raw = (col===7 ? totals.ebitda : col===9 ? totals.ebit : (col===13 ? totals.flujo : totals.acum));
-        if (raw < 0) data.cell.styles.textColor = [220,38,38];
-        if (raw > 0) data.cell.styles.textColor = [5,150,105];
+      if (data.section==='foot'&&(col===7||col===9||col===13||col===14)){
+        const raw=(col===7?totals.ebitda:col===9?totals.ebit:(col===13?totals.flujo:totals.acum));
+        if (raw<0) data.cell.styles.textColor=[220,38,38];
+        if (raw>0) data.cell.styles.textColor=[5,150,105];
       }
     },
     margin: { left: margin, right: margin, top: margin, bottom: margin },
