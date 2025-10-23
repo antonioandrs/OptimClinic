@@ -2612,7 +2612,7 @@ async function imgToDataURL(url){
     });
   }catch{ return null; }
 }
-/* ====== Generación del PDF (alineado, autoajuste y gráficos seguros) ====== */
+/* ====== Generación del PDF (logo alto-izq + autoajuste de gráficos + KPIs color + tabla) ====== */
 async function exportFinancialPDFjsPDF(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
@@ -2620,34 +2620,34 @@ async function exportFinancialPDFjsPDF(){
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
-  const HEADER_SAFE = 180;   // más aire superior
+  const HEADER_SAFE = 150;   // margen seguro para título/encabezado
 
   if (!window.lastData){ alert('Genere el análisis primero'); return; }
   const d = window.lastData;
 
-  /* ---------- Portada ---------- */
-  const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
-  const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
-
-  // Título
+  /* ---------- Título ---------- */
   doc.setFont('helvetica','bold'); 
   doc.setFontSize(32);
   doc.text('Informe Financiero – Escenario Base', pageW/2, margin+32, { align:'center' });
 
-  // Logo arriba-izq
-  let logoBottom = margin + 20;
+  /* ---------- Logo MUY arriba a la izquierda ---------- */
+  let logoBottom = 12; // y inicial arriba
   try{
     const logoSrc = (document.querySelector('.logo img')?.src) || 'https://i.imgur.com/eRKd3Hp.jpg';
     const logoData = await imgToDataURL(logoSrc);
     if (logoData){
-      const w = 100, h = 100;
-      doc.addImage(logoData, 'JPEG', margin, margin+24, w, h);
-      logoBottom = margin + 24 + h;
+      const w = 108, h = 108;
+      // x = margen izquierdo habitual; y = 12 para ganar más espacio
+      doc.addImage(logoData, 'JPEG', margin, 12, w, h);
+      logoBottom = 12 + h;
     }
   }catch{}
 
-  // Bloque de texto alineado a la izquierda
-  let y = Math.max(logoBottom + 24, margin + HEADER_SAFE);
+  /* ---------- Bloque de texto (alineado a la izquierda) ---------- */
+  const empresa = (document.getElementById('empresaNombre')?.value || 'Clínica Ejemplo').trim();
+  const responsable = (document.getElementById('responsableNombre')?.value || 'Responsable').trim();
+
+  let y = Math.max(logoBottom + 28, margin + HEADER_SAFE);
   doc.setFont('helvetica','normal'); 
   doc.setFontSize(14);
   doc.text('Empresa: ' + empresa, margin, y); y += 22;
@@ -2671,7 +2671,7 @@ async function exportFinancialPDFjsPDF(){
     'DSO aseguradoras: ' + dsoTxt + ' · Impuesto sociedades: ' + impTxt
   ].forEach(line => { doc.text(line, margin, y); y += 16; });
 
-  /* ---------- KPIs ---------- */
+  /* ---------- KPIs (con color) ---------- */
   y += 12;
   const kpiLabels = ['Break-even','ROI Final','VAN (NPV)','TIR Anual','Necesidad máx. caja'];
   const kpiValues = [
@@ -2696,44 +2696,54 @@ async function exportFinancialPDFjsPDF(){
   for (let i=0;i<5;i++){ doc.setTextColor(...kpiColors[i]); doc.text(String(kpiValues[i]), margin + i*kpiW, y); }
   doc.setTextColor(0,0,0);
 
-  /* ---------- Gráficos (debajo del texto, nunca montados) ---------- */
+  /* ---------- Gráficos (encajan siempre, sin cortes) ---------- */
   try{
     const pnl  = document.getElementById('chartPnl');
     const cash = document.getElementById('chartCash');
+
     const gap = 14;
     const availableW = pageW - 2*margin - gap;
-    const getDims = (canvas, targetW)=>{
+    const startY = y + 60; // separación con KPIs
+
+    // Altura disponible hasta el margen inferior (dejamos 16pt extra por seguridad)
+    const availableH = Math.max(60, (pageH - margin) - startY - 16);
+
+    // función que mantiene ratio del canvas pero capada por availableH
+    const getDims = (canvas, targetW, maxH)=>{
       const cw = canvas?.width || 800, ch = canvas?.height || 400;
       const ratio = ch / cw;
       const w = targetW;
-      const h = Math.min(260, w * ratio);
+      const hIdeal = w * ratio;
+      const h = Math.min(hIdeal, maxH);
       return { w, h };
     };
-    const dimsLeft  = getDims(pnl,  availableW/2);
-    const dimsRight = getDims(cash, availableW/2);
-    const gH = Math.max(dimsLeft.h, dimsRight.h);
-    const gY = y + 60; // deja 60pt entre KPIs y gráficos
+
+    // repartimos la altura máxima entre ambos para que tengan el mismo alto
+    const leftDims  = getDims(pnl,  availableW/2, availableH);
+    const rightDims = getDims(cash, availableW/2, availableH);
+    const h = Math.min(leftDims.h, rightDims.h); // mismo alto para los dos
 
     // Título + gráfico 1
     doc.setFont('helvetica','bold'); doc.setFontSize(14);
-    doc.text('P&L Operativo', margin, gY);
+    doc.text('P&L Operativo', margin, startY);
     if (pnl && pnl.toDataURL){
       const imgPnl = pnl.toDataURL('image/png', 1.0);
-      doc.addImage(imgPnl, 'PNG', margin, gY+8, dimsLeft.w, dimsLeft.h);
+      doc.addImage(imgPnl, 'PNG', margin, startY+8, leftDims.w, h);
     }
 
     // Título + gráfico 2
-    const rightX = margin + dimsLeft.w + gap;
+    const rightX = margin + leftDims.w + gap;
     doc.setFont('helvetica','bold'); doc.setFontSize(14);
-    doc.text('Flujo de Caja', rightX, gY);
+    doc.text('Flujo de Caja', rightX, startY);
     if (cash && cash.toDataURL){
       const imgCash = cash.toDataURL('image/png', 1.0);
-      doc.addImage(imgCash, 'PNG', rightX, gY+8, dimsRight.w, dimsRight.h);
+      doc.addImage(imgCash, 'PNG', rightX, startY+8, rightDims.w, h);
     }
   }catch(e){}
 
-  /* ---------- Tabla en nueva página ---------- */
+  /* ---------- Tabla (segunda página) ---------- */
   doc.addPage('a4','landscape');
+
   const head = [[
     'Mes','Planif.','Efectivos','Ingresos','Ing. Colab','C.Var','C.Fijos','EBITDA','Amort.','EBIT','Intereses','Impuestos','Principal','Flujo','Acum.'
   ]];
@@ -2792,6 +2802,7 @@ async function exportFinancialPDFjsPDF(){
   ]];
 
   const rightCols = [1,2,3,4,5,6,7,8,9,10,11,12,13,14];
+
   doc.autoTable({
     head, body, foot,
     startY: margin,
@@ -2828,6 +2839,7 @@ async function exportFinancialPDFjsPDF(){
 
   doc.save('Informe_Financiero.pdf');
 }
+
 
 
 function addFooter(doc){
